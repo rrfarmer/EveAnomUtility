@@ -1,0 +1,22 @@
+{
+  "name": "eve-anom-utility",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Server-side EveJS gameplay content admin utility for anomalies, ore sites, and combat missions.",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check src/lib/catalog.js && node --check src/lib/dataStore.js && node --check src/lib/overlayStore.js && node --check src/lib/templatePack.js && node --check src/lib/validator.js && node --check public/app.js && node --check scripts/smoke-test.js && node --check scripts/visual-check.js",
+    "smoke": "node scripts/smoke-test.js",
+    "visual-check": "node scripts/visual-check.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.0"
+  },
+  "dependencies": {
+    "lucide": "^1.21.0"
+  }
+}

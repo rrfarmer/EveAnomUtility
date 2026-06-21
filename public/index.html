@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>EveAnomUtility</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="rail" aria-label="Main navigation">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true"></div>
+          <div>
+            <h1>EveAnomUtility</h1>
+            <span id="dataMode">Loading</span>
+          </div>
+        </div>
+        <nav class="nav">
+          <button class="nav-button is-active" data-view="builder"><i data-lucide="wrench" class="icon"></i><span>Builder</span></button>
+          <button class="nav-button" data-view="systems"><i data-lucide="map" class="icon"></i><span>Systems</span></button>
+          <button class="nav-button" data-view="missions"><i data-lucide="briefcase" class="icon"></i><span>Missions</span></button>
+          <button class="nav-button" data-view="npcs"><i data-lucide="bot" class="icon"></i><span>NPCs</span></button>
+          <button class="nav-button" data-view="pack"><i data-lucide="package" class="icon"></i><span>Pack</span></button>
+          <button class="nav-button" data-view="research"><i data-lucide="book-open" class="icon"></i><span>Research</span></button>
+        </nav>
+        <div class="rail-status">
+          <div>
+            <span class="metric-label"><i data-lucide="file-stack" class="icon"></i>Templates</span>
+            <strong id="metricTemplates">0</strong>
+          </div>
+          <div>
+            <span class="metric-label"><i data-lucide="bot" class="icon"></i>NPC profiles</span>
+            <strong id="metricNpcs">0</strong>
+          </div>
+          <div>
+            <span class="metric-label"><i data-lucide="layers-3" class="icon"></i>Overlays</span>
+            <strong id="metricOverlays">0</strong>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Server-side template authoring</p>
+            <h2 id="viewTitle">Builder</h2>
+          </div>
+          <div class="topbar-actions">
+            <button class="secondary" id="cloneDbButton"><i data-lucide="database" class="icon"></i><span>Clone DB</span></button>
+            <button class="primary" id="saveOverlayButton"><i data-lucide="save" class="icon"></i><span>Save Draft</span></button>
+            <button class="primary accent" id="generatePackButton"><i data-lucide="package-plus" class="icon"></i><span>Generate Pack</span></button>
+          </div>
+        </header>
+
+        <section class="notice" id="notice" hidden></section>
+        <datalist id="npcProfileOptions"></datalist>
+        <datalist id="npcLoadoutOptions"></datalist>
+        <datalist id="npcBehaviorOptions"></datalist>
+        <datalist id="npcSpawnGroupOptions"></datalist>
+        <datalist id="resourceTypeOptions"></datalist>
+
+        <section class="view is-active" id="view-builder">
+          <div class="builder-layout">
+            <section class="panel builder-form" aria-label="Template builder">
+              <div class="section-heading">
+                <h3><i data-lucide="library" class="icon"></i><span>Template Library</span></h3>
+                <div class="content-summary" id="contentSummary"></div>
+              </div>
+
+              <div class="family-grid" id="familyControl"></div>
+
+              <div class="form-grid template-id-row">
+                <label>
+                  <span>Delivery</span>
+                  <select id="deliverySelect"></select>
+                </label>
+                <label>
+                  <span>Status</span>
+                  <select id="statusInput">
+                    <option value="draft">Draft</option>
+                    <option value="ready">Ready</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </label>
+                <label class="mission-category-field" id="missionCategoryField" hidden>
+                  <span>Mission Category</span>
+                  <select id="builderMissionTypeSelect">
+                    <option value="combat">Combat</option>
+                    <option value="courier">Courier</option>
+                    <option value="mining">Mining</option>
+                    <option value="trade">Trade</option>
+                    <option value="talk_to_agent">Talk To Agent</option>
+                    <option value="agent_interaction">Agent Interaction</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Title</span>
+                  <input id="titleInput" placeholder="Guristas Forward Rally Point">
+                </label>
+                <label class="span-2">
+                  <span>Template ID</span>
+                  <div class="search-row">
+                    <input id="templateIdInput" placeholder="admin:combat:forward-rally-point or existing EveJS templateID">
+                    <button class="secondary square" id="loadTemplateButton" title="Load or start template"><i data-lucide="file-search" class="icon"></i><span>Load</span></button>
+                  </div>
+                </label>
+                <label class="span-2">
+                  <span>Existing Template</span>
+                  <div class="template-picker">
+                    <div class="search-row">
+                      <input id="templateSearchInput" placeholder="Filter dropdown by name or templateID">
+                      <button class="secondary square" id="templateSearchButton" title="Filter templates"><i data-lucide="filter" class="icon"></i><span>Filter</span></button>
+                    </div>
+                    <div class="search-row">
+                      <select id="templateSelect">
+                        <option value="">Loading filtered templates...</option>
+                      </select>
+                      <button class="secondary square" id="useTemplateButton" title="Use selected template"><i data-lucide="check" class="icon"></i><span>Use</span></button>
+                    </div>
+                    <div class="picker-meta" id="templateSelectMeta"></div>
+                  </div>
+                </label>
+              </div>
+
+              <div class="selected-template" id="selectedTemplateCard"></div>
+
+              <div class="section-heading">
+                <h3><i data-lucide="crosshair" class="icon"></i><span>Spawn Rules</span></h3>
+                <div class="segmented" id="scopeModeControl">
+                  <button class="is-active" data-scope-mode="any_eligible"><i data-lucide="globe-2" class="icon"></i><span>Any</span></button>
+                  <button data-scope-mode="security_bands"><i data-lucide="shield" class="icon"></i><span>Bands</span></button>
+                  <button data-scope-mode="specific_system"><i data-lucide="orbit" class="icon"></i><span>System</span></button>
+                  <button data-scope-mode="specific_stargate"><i data-lucide="landmark" class="icon"></i><span>Gate</span></button>
+                </div>
+              </div>
+
+              <div class="rule-panel">
+                <div class="scope-helper" id="scopeHelper"></div>
+                <div class="check-grid" id="securityBandControl">
+                  <label><input type="checkbox" value="highsec" checked><span>Highsec</span></label>
+                  <label><input type="checkbox" value="lowsec" checked><span>Lowsec</span></label>
+                  <label><input type="checkbox" value="nullsec" checked><span>Nullsec</span></label>
+                  <label><input type="checkbox" value="wormhole" checked><span>Wormhole</span></label>
+                </div>
+                <div class="form-grid rule-grid">
+                  <label>
+                    <span>Weight</span>
+                    <input id="spawnWeightInput" type="number" min="0" step="0.1" value="1">
+                  </label>
+                  <label>
+                    <span>Max Per System</span>
+                    <input id="maxPerSystemInput" type="number" min="1" value="1">
+                  </label>
+                  <label>
+                    <span>Respawn Minutes</span>
+                    <input id="respawnMinutesInput" type="number" min="1" value="60">
+                  </label>
+                  <label>
+                    <span>Slot Count</span>
+                    <input id="slotCountInput" type="number" min="1" value="1">
+                  </label>
+                </div>
+              </div>
+
+              <div class="section-heading">
+                <h3><i data-lucide="locate-fixed" class="icon"></i><span>Placement</span></h3>
+                <div class="segmented" id="anchorKindControl">
+                  <button class="is-active" data-anchor-kind="system"><i data-lucide="orbit" class="icon"></i><span>System</span></button>
+                  <button data-anchor-kind="stargate"><i data-lucide="landmark" class="icon"></i><span>Gate</span></button>
+                  <button data-anchor-kind="coordinate"><i data-lucide="locate-fixed" class="icon"></i><span>Coords</span></button>
+                </div>
+              </div>
+
+              <div id="systemScopeBlock">
+                <div class="form-grid">
+                  <label class="span-2">
+                    <span>Specific Solar System</span>
+                    <div class="search-row">
+                      <input id="systemSearchInput" placeholder="Search by name or ID">
+                      <button class="secondary square" id="systemSearchButton" title="Search systems"><i data-lucide="search" class="icon"></i><span>Search</span></button>
+                    </div>
+                  </label>
+                </div>
+                <div class="system-picked" id="selectedSystem"></div>
+                <div class="results-strip" id="systemResults"></div>
+                <div class="gate-list" id="gateList"></div>
+              </div>
+
+              <div class="coordinate-grid" id="coordinateGrid" hidden>
+                <label><span>X</span><input id="coordX" type="number" value="0"></label>
+                <label><span>Y</span><input id="coordY" type="number" value="0"></label>
+                <label><span>Z</span><input id="coordZ" type="number" value="0"></label>
+              </div>
+
+              <div class="section-heading">
+                <h3><i data-lucide="radar" class="icon"></i><span>Encounters</span></h3>
+                <button class="secondary" id="addEncounterButton"><i data-lucide="plus" class="icon"></i><span>Add Wave</span></button>
+              </div>
+              <div id="encounterList" class="editor-list"></div>
+
+              <div class="section-heading">
+                <h3><i data-lucide="gem" class="icon"></i><span>Resources</span></h3>
+                <button class="secondary" id="addResourceButton"><i data-lucide="plus" class="icon"></i><span>Add Resource</span></button>
+              </div>
+              <div class="search-row resource-search">
+                <input id="resourceSearchInput" placeholder="Search individual ore, ice, gas, or typeID">
+                <button class="secondary square" id="resourceSearchButton" title="Search resources"><i data-lucide="search" class="icon"></i><span>Search</span></button>
+              </div>
+              <div class="results-strip" id="resourceResults"></div>
+              <div id="resourceList" class="editor-list"></div>
+
+              <div class="section-heading">
+                <h3><i data-lucide="sliders-horizontal" class="icon"></i><span>NPC Overrides</span></h3>
+                <button class="secondary" id="addOverrideButton"><i data-lucide="plus" class="icon"></i><span>Add Override</span></button>
+              </div>
+              <div id="overrideList" class="editor-list"></div>
+
+              <label class="notes-label">
+                <span>Notes</span>
+                <textarea id="notesInput" rows="4" placeholder="Authoring notes"></textarea>
+              </label>
+            </section>
+
+            <aside class="panel builder-side" aria-label="Validation and saved templates">
+              <div class="section-heading">
+                <h3><i data-lucide="shield-check" class="icon"></i><span>Validation</span></h3>
+                <button class="secondary" id="validateButton"><i data-lucide="check-circle-2" class="icon"></i><span>Validate</span></button>
+              </div>
+              <div id="validationList" class="validation-list"></div>
+
+              <div class="section-heading">
+                <h3><i data-lucide="folder-open" class="icon"></i><span>Saved</span></h3>
+                <button class="secondary" id="newOverlayButton"><i data-lucide="file-plus-2" class="icon"></i><span>New</span></button>
+              </div>
+              <div id="overlayList" class="overlay-list"></div>
+
+              <div class="section-heading">
+                <h3><i data-lucide="file-json" class="icon"></i><span>Template Data</span></h3>
+              </div>
+              <pre class="json-preview template-json-preview" id="templateDataPreview"></pre>
+              <div class="section-heading">
+                <h3><i data-lucide="eye" class="icon"></i><span>Draft Preview</span></h3>
+              </div>
+              <pre class="json-preview" id="overlayPreview"></pre>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="view-systems">
+          <section class="panel">
+            <div class="section-heading">
+              <h3><i data-lucide="map" class="icon"></i><span>Solar Systems</span></h3>
+              <div class="search-row compact">
+                <input id="systemsViewSearch" placeholder="Jita, Tanoo, 30000142">
+                <button class="secondary square" id="systemsViewButton"><i data-lucide="search" class="icon"></i><span>Search</span></button>
+              </div>
+            </div>
+            <div id="systemsViewResults" class="data-grid"></div>
+          </section>
+        </section>
+
+        <section class="view" id="view-npcs">
+          <section class="panel">
+            <div class="section-heading">
+              <h3><i data-lucide="bot" class="icon"></i><span>NPC Catalog</span></h3>
+              <div class="catalog-tools">
+                <select id="npcKindSelect">
+                  <option value="profiles">Profiles</option>
+                  <option value="loadouts">Loadouts</option>
+                  <option value="behaviorProfiles">Behavior</option>
+                  <option value="spawnGroups">Spawn Groups</option>
+                  <option value="spawnPools">Spawn Pools</option>
+                  <option value="startupRules">Startup Rules</option>
+                </select>
+                <input id="npcSearchInput" placeholder="Search NPC data">
+                <button class="secondary square" id="npcSearchButton"><i data-lucide="search" class="icon"></i><span>Search</span></button>
+              </div>
+            </div>
+            <div id="npcResults" class="data-grid"></div>
+          </section>
+        </section>
+
+        <section class="view" id="view-missions">
+          <section class="panel">
+            <div class="section-heading">
+              <h3><i data-lucide="briefcase" class="icon"></i><span>Mission Catalog</span></h3>
+              <div class="catalog-tools">
+                <label class="catalog-field">
+                  <span>Mission Category</span>
+                  <select id="missionTypeSelect">
+                    <option value="all">All</option>
+                    <option value="combat">Combat</option>
+                    <option value="courier">Courier</option>
+                    <option value="mining">Mining</option>
+                    <option value="trade">Trade</option>
+                    <option value="talk_to_agent">Talk To Agent</option>
+                    <option value="agent_interaction">Agent Interaction</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <input id="missionSearchInput" placeholder="Search mission name, ID, or template">
+                <button class="secondary square" id="missionSearchButton"><i data-lucide="search" class="icon"></i><span>Search</span></button>
+              </div>
+            </div>
+            <div id="missionResults" class="data-grid"></div>
+          </section>
+        </section>
+
+        <section class="view" id="view-pack">
+          <section class="panel">
+            <div class="section-heading">
+              <h3><i data-lucide="package" class="icon"></i><span>Generated Template Pack</span></h3>
+              <div class="topbar-actions">
+                <button class="secondary" id="refreshPackButton"><i data-lucide="eye" class="icon"></i><span>Preview</span></button>
+                <button class="primary accent" id="writePackButton"><i data-lucide="file-json" class="icon"></i><span>Write JSON</span></button>
+              </div>
+            </div>
+            <div class="pack-summary" id="packSummary"></div>
+            <pre class="pack-preview" id="packPreview"></pre>
+          </section>
+        </section>
+
+        <section class="view" id="view-research">
+          <section class="panel doc-panel">
+            <div class="section-heading">
+              <h3><i data-lucide="book-open" class="icon"></i><span>Research</span></h3>
+              <button class="secondary" id="loadResearchButton"><i data-lucide="refresh-cw" class="icon"></i><span>Refresh</span></button>
+            </div>
+            <pre id="researchText"></pre>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="/vendor/lucide.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
