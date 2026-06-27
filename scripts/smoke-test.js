@@ -52,10 +52,94 @@ async function main() {
     }
     const combatMissions = await request(server, "/api/missions?missionType=combat&limit=5");
     if (combatMissions.statusCode !== 200) throw new Error(`/api/missions combat failed: ${combatMissions.body}`);
+    const spawnPools = await request(server, "/api/npcs?kind=spawnPools&limit=5");
+    if (spawnPools.statusCode !== 200 || !JSON.parse(spawnPools.body).npcs.length) {
+      throw new Error(`/api/npcs spawnPools failed: ${spawnPools.body}`);
+    }
+    const lootTables = await request(server, "/api/npcs?kind=lootTables&limit=5");
+    if (lootTables.statusCode !== 200 || !JSON.parse(lootTables.body).npcs.length) {
+      throw new Error(`/api/npcs lootTables failed: ${lootTables.body}`);
+    }
+    const authoredLootTableID = `admin_smoke_global_loot_${Date.now()}`;
+    const savedAuthoredLoot = await request(server, "/api/npc-authoring/loot-tables", {
+      method: "POST",
+      body: {
+        lootTableID: authoredLootTableID,
+        name: "Smoke Global Loot Profile",
+        minEntries: 1,
+        maxEntries: 2,
+        stackableMinQuantity: 1,
+        stackableMaxQuantity: 25,
+        entries: [],
+        guaranteedEntries: [{ typeID: 34, quantity: 100 }],
+      },
+    });
+    if (savedAuthoredLoot.statusCode !== 200) {
+      throw new Error(`/api/npc-authoring/loot-tables save failed: ${savedAuthoredLoot.body}`);
+    }
+    const authoredLootLookup = await request(server, `/api/npc-authoring/loot-tables/${encodeURIComponent(authoredLootTableID)}`);
+    if (authoredLootLookup.statusCode !== 200 || !authoredLootLookup.body.includes(authoredLootTableID)) {
+      throw new Error(`/api/npc-authoring/loot-tables lookup failed: ${authoredLootLookup.body}`);
+    }
+    const authoredLootPack = await request(server, "/api/template-pack");
+    if (authoredLootPack.statusCode !== 200) throw new Error(`/api/template-pack authored loot failed: ${authoredLootPack.body}`);
+    if (!JSON.parse(authoredLootPack.body).pack.npcLootTables.some((lootTable) => lootTable.lootTableID === authoredLootTableID)) {
+      throw new Error(`global authored loot profile was not emitted: ${authoredLootPack.body}`);
+    }
+    const authoredLootDelete = await request(server, `/api/npc-authoring/loot-tables/${encodeURIComponent(authoredLootTableID)}`, { method: "DELETE" });
+    if (authoredLootDelete.statusCode !== 200) {
+      throw new Error(`/api/npc-authoring/loot-tables delete failed: ${authoredLootDelete.body}`);
+    }
     const parsedCombatMissions = JSON.parse(combatMissions.body);
     if (!parsedCombatMissions.missions.length || parsedCombatMissions.missions.some((mission) => mission.missionType !== "combat" || !mission.linkedTemplateID)) {
       throw new Error(`combat mission classification failed: ${combatMissions.body}`);
     }
+    const securityDraft = await request(server, "/api/mission-security/draft?missionID=2391");
+    if (securityDraft.statusCode !== 200) throw new Error(`/api/mission-security/draft failed: ${securityDraft.body}`);
+    const parsedSecurityDraft = JSON.parse(securityDraft.body);
+    if (
+      !parsedSecurityDraft.draft ||
+      parsedSecurityDraft.draft.rooms.length !== 2 ||
+      parsedSecurityDraft.draft.gates.length !== 1 ||
+      parsedSecurityDraft.draft.encounters.length < 4 ||
+      parsedSecurityDraft.draft.completion.encounterKeys.length !== 2
+    ) {
+      throw new Error(`The Score Security draft is incomplete: ${securityDraft.body}`);
+    }
+    const securityValidation = await request(server, "/api/validate", {
+      method: "POST",
+      body: parsedSecurityDraft.draft,
+    });
+    if (securityValidation.statusCode !== 200) throw new Error(`/api/validate Security draft failed: ${securityValidation.body}`);
+    const parsedSecurityValidation = JSON.parse(securityValidation.body);
+    if (!parsedSecurityValidation.validation || parsedSecurityValidation.validation.ok !== true) {
+      throw new Error(`expected Security draft validation ok: ${securityValidation.body}`);
+    }
+    const securityOverlay = {
+      ...parsedSecurityDraft.draft,
+      id: `overlay_smoke_security_${Date.now()}`,
+      templateID: `admin:smoke:security-the-score:${Date.now()}`,
+      title: "Smoke Security The Score",
+    };
+    const savedSecurity = await request(server, "/api/overlays", {
+      method: "POST",
+      body: securityOverlay,
+    });
+    if (savedSecurity.statusCode !== 200) throw new Error(`/api/overlays save Security failed: ${savedSecurity.body}`);
+    const securityPack = await request(server, "/api/template-pack");
+    if (securityPack.statusCode !== 200) throw new Error(`/api/template-pack Security failed: ${securityPack.body}`);
+    const parsedSecurityPack = JSON.parse(securityPack.body);
+    const generatedSecurityTemplate = parsedSecurityPack.pack.templates.find((template) => template.templateID === securityOverlay.templateID);
+    if (
+      !generatedSecurityTemplate ||
+      generatedSecurityTemplate.siteSceneProfile.roomProfiles.length !== 2 ||
+      generatedSecurityTemplate.siteSceneProfile.gateProfiles.length !== 1 ||
+      generatedSecurityTemplate.populationHints.completion.encounterKeys.length !== 2
+    ) {
+      throw new Error(`Security draft did not emit room/gate template data: ${securityPack.body}`);
+    }
+    const securityOverlayDelete = await request(server, `/api/overlays/${encodeURIComponent(securityOverlay.id)}`, { method: "DELETE" });
+    if (securityOverlayDelete.statusCode !== 200) throw new Error(`/api/overlays delete Security failed: ${securityOverlayDelete.body}`);
     const courierMissions = await request(server, "/api/missions?missionType=courier&limit=5");
     if (courierMissions.statusCode !== 200) throw new Error(`/api/missions courier failed: ${courierMissions.body}`);
     const parsedCourierMissions = JSON.parse(courierMissions.body);
@@ -120,12 +204,27 @@ async function main() {
       placement: { anchorKind: "system" },
       scanner: { visibility: "anomaly", signalStrength: 100 },
       encounters: [{ profileID: "generic_hostile", count: 1 }],
+      npcOverrides: [{ profileID: "generic_hostile", lootTableID: "admin_smoke_loot", damageMultiplier: 1 }],
+      lootTables: [{
+        lootTableID: "admin_smoke_loot",
+        name: "Smoke Loot Table",
+        minEntries: 1,
+        maxEntries: 1,
+        guaranteedEntries: [{ typeID: 34, quantity: 100 }],
+        entries: [{ typeID: 35, weight: 1, minQuantity: 1, maxQuantity: 3 }],
+      }],
     };
     const saved = await request(server, "/api/overlays", {
       method: "POST",
       body: smokeOverlay,
     });
     if (saved.statusCode !== 200) throw new Error(`/api/overlays save failed: ${saved.body}`);
+    const smokePack = await request(server, "/api/template-pack");
+    if (smokePack.statusCode !== 200) throw new Error(`/api/template-pack smoke loot failed: ${smokePack.body}`);
+    const parsedSmokePack = JSON.parse(smokePack.body);
+    if (!parsedSmokePack.pack.npcLootTables.some((lootTable) => lootTable.lootTableID === "admin_smoke_loot")) {
+      throw new Error(`authored loot table was not emitted: ${smokePack.body}`);
+    }
     const overlayDelete = await request(server, `/api/overlays/${encodeURIComponent(smokeOverlay.id)}`, { method: "DELETE" });
     if (overlayDelete.statusCode !== 200) throw new Error(`/api/overlays delete failed: ${overlayDelete.body}`);
     const deletedOverlayLookup = await request(server, `/api/overlays/${encodeURIComponent(smokeOverlay.id)}`);

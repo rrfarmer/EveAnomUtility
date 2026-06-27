@@ -90,14 +90,23 @@ const state = {
   selectedTemplateRaw: null,
   templateOptions: [],
   templateOptionsRequest: 0,
+  rooms: [],
+  gates: [],
   encounters: [],
   resources: [],
   npcOverrides: [],
+  lootTables: [],
+  lootProfiles: [],
+  completion: null,
+  missionSecurity: null,
+  sourceLinks: [],
   lookup: {
     npcProfiles: [],
     npcLoadouts: [],
     npcBehaviors: [],
     npcSpawnGroups: [],
+    npcSpawnPools: [],
+    npcLootTables: [],
     resources: [],
   },
   loadedOverlayId: "",
@@ -163,7 +172,7 @@ function deliveryLabel(id) {
 
 function missionTypeLabel(type) {
   return {
-    combat: "Combat",
+    combat: "Security",
     courier: "Courier",
     mining: "Mining",
     trade: "Trade",
@@ -188,7 +197,7 @@ function escapeHTML(value) {
 }
 
 function rowID(row) {
-  return row.profileID || row.loadoutID || row.behaviorProfileID || row.spawnGroupID || row.id || "";
+  return row.profileID || row.loadoutID || row.behaviorProfileID || row.spawnGroupID || row.spawnPoolID || row.lootTableID || row.id || "";
 }
 
 function legacyKindFromSelection(contentFamily = state.contentFamily, delivery = state.delivery) {
@@ -331,8 +340,10 @@ function setView(view) {
   $("#viewTitle").textContent = {
     builder: "Builder",
     systems: "Systems",
+    "mission-security": "Missions: Security",
     missions: "Missions",
     npcs: "NPCs",
+    loot: "Loot Table Profiles",
     pack: "Template Pack",
     research: "Research",
   }[view] || "Builder";
@@ -524,13 +535,18 @@ function overlayFromForm() {
       visibility: scannerVisibility(),
       signalStrength: state.delivery === "anomaly" ? 100 : null,
     },
+    rooms: state.rooms,
+    gates: state.gates,
     encounters: state.encounters,
     resources: state.resources,
     npcOverrides: state.npcOverrides,
-    completion: {
+    lootTables: state.lootTables,
+    completion: state.completion || {
       mode: defaultCompletionMode(),
       despawnDelaySeconds: state.delivery === "mission_private" ? 0 : 20,
     },
+    missionSecurity: state.missionSecurity,
+    sourceLinks: state.sourceLinks,
     notes: $("#notesInput").value.trim(),
   };
 }
@@ -590,24 +606,52 @@ function renderDatalist(selector, rows, metaBuilder) {
   });
 }
 
+function lootTableOptionRows() {
+  const byID = new Map();
+  state.lookup.npcLootTables.forEach((row) => {
+    byID.set(rowID(row), row);
+  });
+  state.lootProfiles.forEach((row) => {
+    const id = String(row.lootTableID || "").trim();
+    if (!id) return;
+    byID.set(id, {
+      id,
+      name: row.name,
+      entriesCount: Array.isArray(row.entries) ? row.entries.length : 0,
+      guaranteedEntriesCount: Array.isArray(row.guaranteedEntries) ? row.guaranteedEntries.length : 0,
+    });
+  });
+  return [...byID.values()];
+}
+
+function renderLootTableOptions() {
+  renderDatalist("#npcLootTableOptions", lootTableOptionRows(), (row) => smallMeta([row.name, `${row.entriesCount || 0} weighted`, `${row.guaranteedEntriesCount || 0} guaranteed`]));
+}
+
 async function loadBuilderLookups() {
-  const [profiles, loadouts, behaviors, spawnGroups, resources] = await Promise.all([
+  const [profiles, loadouts, behaviors, spawnGroups, spawnPools, lootTables, resources] = await Promise.all([
     api("/api/npcs?kind=profiles&limit=500"),
     api("/api/npcs?kind=loadouts&limit=500"),
     api("/api/npcs?kind=behaviorProfiles&limit=500"),
     api("/api/npcs?kind=spawnGroups&limit=500"),
+    api("/api/npcs?kind=spawnPools&limit=500"),
+    api("/api/npcs?kind=lootTables&limit=500"),
     api("/api/resources?limit=500"),
   ]);
   state.lookup.npcProfiles = profiles.npcs || [];
   state.lookup.npcLoadouts = loadouts.npcs || [];
   state.lookup.npcBehaviors = behaviors.npcs || [];
   state.lookup.npcSpawnGroups = spawnGroups.npcs || [];
+  state.lookup.npcSpawnPools = spawnPools.npcs || [];
+  state.lookup.npcLootTables = lootTables.npcs || [];
   state.lookup.resources = resources.resources || [];
 
   renderDatalist("#npcProfileOptions", state.lookup.npcProfiles, (row) => smallMeta([row.name, row.shipTypeName, row.bounty ? `${row.bounty} ISK` : ""]));
-  renderDatalist("#npcLoadoutOptions", state.lookup.npcLoadouts, (row) => smallMeta([row.name, row.weaponSystem, row.tankMode]));
+  renderDatalist("#npcLoadoutOptions", state.lookup.npcLoadouts, (row) => smallMeta([row.name, `${row.modulesCount || 0} modules`, `${row.chargesCount || 0} charges`]));
   renderDatalist("#npcBehaviorOptions", state.lookup.npcBehaviors, (row) => smallMeta([row.name, row.attackProfile, row.rangeBand]));
-  renderDatalist("#npcSpawnGroupOptions", state.lookup.npcSpawnGroups, (row) => smallMeta([row.name, `${row.members ? row.members.length : 0} members`]));
+  renderDatalist("#npcSpawnGroupOptions", state.lookup.npcSpawnGroups, (row) => smallMeta([row.name, `${row.entriesCount || 0} entries`, `${row.memberCount || 0} members`]));
+  renderDatalist("#npcSpawnPoolOptions", state.lookup.npcSpawnPools, (row) => smallMeta([row.name, `${row.entriesCount || 0} weighted entries`, row.entityType]));
+  renderLootTableOptions();
   renderDatalist("#resourceTypeOptions", state.lookup.resources.map((row) => ({ ...row, id: row.typeID })), (row) => smallMeta([row.name, resourceKindLabel(row.kind)]));
 }
 
@@ -810,6 +854,7 @@ async function loadTemplateID() {
     state.encounters = [];
     state.resources = [];
     state.npcOverrides = [];
+    state.lootTables = [];
     applyDefaultsForCurrentContent();
     if (!$("#titleInput").value.trim()) {
       $("#titleInput").value = templateID.replace(/^admin[:/-]?/i, "").replace(/[-_:]+/g, " ");
@@ -903,9 +948,95 @@ function renderSelectedSystem() {
 }
 
 function renderEditorRows() {
+  renderMissionLayout();
   renderEncounters();
   renderResources();
   renderOverrides();
+  renderLootTables();
+}
+
+function renderMissionLayout() {
+  const list = $("#missionLayoutList");
+  if (!list) return;
+  list.innerHTML = "";
+  if (state.contentFamily !== "mission") {
+    list.closest(".mission-layout-section").hidden = true;
+    return;
+  }
+  list.closest(".mission-layout-section").hidden = false;
+  state.rooms.forEach((room, index) => {
+    const row = document.createElement("div");
+    row.className = "editor-row";
+    row.innerHTML = `
+      <div class="editor-row-grid">
+        <label class="wide"><span>Room Key</span><input data-field="roomKey"></label>
+        <label class="wide"><span>Label</span><input data-field="label"></label>
+        <label><span>Role</span><input data-field="role"></label>
+        <label><span>Initial State</span><select data-field="initialState"><option value="active">Active</option><option value="pending">Pending</option><option value="locked">Locked</option></select></label>
+        <button class="remove-row">${iconText("trash-2", "Remove")}</button>
+      </div>
+    `;
+    bindRow(row, room, () => {
+      state.rooms.splice(index, 1);
+      renderAll();
+    });
+    list.appendChild(row);
+    hydrateIcons(row);
+  });
+  state.gates.forEach((gate, index) => {
+    const row = document.createElement("div");
+    row.className = "editor-row";
+    row.innerHTML = `
+      <div class="editor-row-grid">
+        <label class="wide"><span>Gate Key</span><input data-field="gateKey"></label>
+        <label class="wide"><span>Destination Room</span><input data-field="destinationRoomKey"></label>
+        <label><span>Type ID</span><input data-field="typeID" data-number="true" type="number"></label>
+        <label><span>From Object</span><input data-field="fromObjectID" data-number="true" type="number"></label>
+        <label><span>Initial State</span><select data-field="initialState"><option value="unlocked">Unlocked</option><option value="locked">Locked</option><option value="used">Used</option></select></label>
+        <button class="remove-row">${iconText("trash-2", "Remove")}</button>
+      </div>
+    `;
+    bindRow(row, gate, () => {
+      state.gates.splice(index, 1);
+      renderAll();
+    });
+    list.appendChild(row);
+    hydrateIcons(row);
+  });
+}
+
+function lookupNpcRow(collection, id) {
+  const needle = String(id || "").trim();
+  if (!needle) return null;
+  return (state.lookup[collection] || []).find((row) => rowID(row) === needle) || null;
+}
+
+function authoredLootTableByID(id) {
+  const needle = String(id || "").trim();
+  if (!needle) return null;
+  return state.lootTables.find((lootTable) => String(lootTable.lootTableID || "").trim() === needle) ||
+    state.lootProfiles.find((lootTable) => String(lootTable.lootTableID || "").trim() === needle) ||
+    null;
+}
+
+function encounterChipHTML(encounter) {
+  const spawnGroup = lookupNpcRow("npcSpawnGroups", encounter.spawnGroupID);
+  const spawnPool = lookupNpcRow("npcSpawnPools", encounter.spawnPoolID);
+  const profile = lookupNpcRow("npcProfiles", encounter.profileID);
+  const spawnQuery = String(encounter.spawnQuery || "").trim();
+  if (spawnGroup) {
+    return `${icon("users")}<div><strong>${escapeHTML(spawnGroup.name || spawnGroup.id)}</strong><span>${smallMeta(["spawn group", `${spawnGroup.entriesCount || 0} entries`, `${spawnGroup.memberCount || 0} members`, (spawnGroup.sampleMembers || []).join(", ")])}</span></div>`;
+  }
+  if (spawnPool) {
+    return `${icon("shuffle")}<div><strong>${escapeHTML(spawnPool.name || spawnPool.id)}</strong><span>${smallMeta(["spawn pool", `${spawnPool.entriesCount || 0} weighted entries`, spawnPool.entityType, (spawnPool.sampleProfiles || []).join(", ")])}</span></div>`;
+  }
+  if (profile) {
+    return `${icon("crosshair")}<div><strong>${escapeHTML(profile.name || profile.profileID)}</strong><span>${smallMeta(["profile", profile.shipTypeName, profile.loadoutID, profile.lootTableID])}</span></div>`;
+  }
+  if (spawnQuery) {
+    return `${icon("search-code")}<div><strong>${escapeHTML(spawnQuery)}</strong><span>EveJS resolves this query at spawn time against NPC profiles and pools.</span></div>`;
+  }
+  return `${icon("circle-alert")}<div><strong>No NPC source selected</strong><span>Choose a profile, spawn pool, spawn group, or query before saving.</span></div>`;
 }
 
 function renderEncounters() {
@@ -917,16 +1048,31 @@ function renderEncounters() {
     row.innerHTML = `
       <div class="editor-row-grid">
         <label class="wide"><span>Profile ID</span><input data-field="profileID" list="npcProfileOptions"></label>
+        <label class="wide"><span>Spawn Pool</span><input data-field="spawnPoolID" list="npcSpawnPoolOptions"></label>
         <label class="wide"><span>Spawn Group</span><input data-field="spawnGroupID" list="npcSpawnGroupOptions"></label>
+        <label class="wide"><span>Spawn Query</span><input data-field="spawnQuery"></label>
         <label><span>Count</span><input data-field="count" type="number" min="1"></label>
-        <label><span>Trigger</span><select data-field="trigger"><option value="on_load">On Load</option><option value="wave_cleared">Wave Cleared</option><option value="timer">Timer</option></select></label>
+        <label><span>Trigger</span><select data-field="trigger"><option value="on_load">On Load</option><option value="on_room_active">Room Active</option><option value="wave_cleared">Wave Cleared</option><option value="visible_countdown">Countdown</option><option value="timer">Timer</option></select></label>
+        <label><span>Room</span><input data-field="roomKey"></label>
         <label><span>Target</span><select data-field="targetPolicy"><option value="nearest_player">Nearest Player</option><option value="invoker">Invoker</option><option value="none">None</option></select></label>
+        <div class="resource-chip full" data-encounter-chip>${encounterChipHTML(encounter)}</div>
         <button class="remove-row">${iconText("trash-2", "Remove")}</button>
       </div>
     `;
     bindRow(row, encounter, () => {
       state.encounters.splice(index, 1);
       renderAll();
+    });
+    const chip = row.querySelector("[data-encounter-chip]");
+    row.querySelectorAll('[data-field="profileID"], [data-field="spawnPoolID"], [data-field="spawnGroupID"], [data-field="spawnQuery"]').forEach((input) => {
+      input.addEventListener("input", () => {
+        chip.innerHTML = encounterChipHTML(encounter);
+        hydrateIcons(chip);
+      });
+      input.addEventListener("change", () => {
+        chip.innerHTML = encounterChipHTML(encounter);
+        hydrateIcons(chip);
+      });
     });
     list.appendChild(row);
     hydrateIcons(row);
@@ -975,6 +1121,7 @@ function renderOverrides() {
         <label class="wide"><span>Profile ID</span><input data-field="profileID" list="npcProfileOptions"></label>
         <label class="wide"><span>Loadout ID</span><input data-field="loadoutID" list="npcLoadoutOptions"></label>
         <label class="wide"><span>Behavior ID</span><input data-field="behaviorProfileID" list="npcBehaviorOptions"></label>
+        <label class="wide"><span>Loot Table ID</span><input data-field="lootTableID" list="npcLootTableOptions"></label>
         <label><span>Damage</span><input data-field="damageMultiplier" type="number" min="0.1" step="0.1"></label>
         <label><span>Bounty</span><input data-field="bounty" type="number"></label>
         <label class="full"><span>Module Overrides JSON</span><textarea data-field="moduleOverrides" data-json="array" rows="3" placeholder='[{"slot":"high","typeID":12345,"mode":"replace"}]'></textarea></label>
@@ -990,7 +1137,247 @@ function renderOverrides() {
   });
 }
 
+function defaultLootTable() {
+  return {
+    lootTableID: `admin_loot_${Math.max(1, state.lootTables.length + 1)}`,
+    name: "Admin Loot Table",
+    minEntries: 0,
+    maxEntries: 1,
+    allowDuplicates: false,
+    guaranteedEntries: [],
+    entries: [{ typeID: 34, weight: 1, minQuantity: 1, maxQuantity: 10 }],
+  };
+}
+
+function lootTableChipHTML(lootTable) {
+  const existing = lookupNpcRow("npcLootTables", lootTable.lootTableID);
+  const authored = authoredLootTableByID(lootTable.lootTableID);
+  const entries = Array.isArray(lootTable.entries) ? lootTable.entries : [];
+  const guaranteedEntries = Array.isArray(lootTable.guaranteedEntries) ? lootTable.guaranteedEntries : [];
+  const source = existing && authored ? "overrides existing EveJS table" : "authored utility table";
+  return `${icon(existing ? "package-check" : "package-open")}<div><strong>${escapeHTML(lootTable.name || lootTable.lootTableID || "Unnamed loot table")}</strong><span>${smallMeta([source, `${guaranteedEntries.length} guaranteed`, `${entries.length} weighted`, `rolls ${lootTable.minEntries || 0}-${lootTable.maxEntries || 0}`])}</span></div>`;
+}
+
+function renderLootTables() {
+  const list = $("#lootTableList");
+  list.innerHTML = "";
+  state.lootTables.forEach((lootTable, index) => {
+    const row = document.createElement("div");
+    row.className = "editor-row";
+    row.innerHTML = `
+      <div class="editor-row-grid">
+        <label class="wide"><span>Loot Table ID</span><input data-field="lootTableID" list="npcLootTableOptions"></label>
+        <label class="wide"><span>Name</span><input data-field="name"></label>
+        <label><span>Min Entries</span><input data-field="minEntries" data-number="true" type="number" min="0"></label>
+        <label><span>Max Entries</span><input data-field="maxEntries" data-number="true" type="number" min="0"></label>
+        <label><span>Stack Min Qty</span><input data-field="stackableMinQuantity" data-number="true" type="number" min="0"></label>
+        <label><span>Stack Max Qty</span><input data-field="stackableMaxQuantity" data-number="true" type="number" min="0"></label>
+        <label class="checkbox-field"><input data-field="allowDuplicates" data-boolean="true" type="checkbox"><span>Allow Duplicates</span></label>
+        <label class="full"><span>Guaranteed Entries JSON</span><textarea data-field="guaranteedEntries" data-json="array" rows="4" placeholder='[{"typeID":34,"quantity":1000}]'></textarea></label>
+        <label class="full"><span>Weighted Entries JSON</span><textarea data-field="entries" data-json="array" rows="5" placeholder='[{"typeID":35,"weight":5,"minQuantity":1,"maxQuantity":3}]'></textarea></label>
+        <label class="full"><span>Notes</span><textarea data-field="notes" rows="2"></textarea></label>
+        <div class="resource-chip full" data-loot-table-chip>${lootTableChipHTML(lootTable)}</div>
+        <button class="remove-row">${iconText("trash-2", "Remove")}</button>
+      </div>
+    `;
+    bindRow(row, lootTable, () => {
+      state.lootTables.splice(index, 1);
+      renderAll();
+    });
+    const chip = row.querySelector("[data-loot-table-chip]");
+    row.querySelectorAll("[data-field]").forEach((input) => {
+      input.addEventListener("input", () => {
+        chip.innerHTML = lootTableChipHTML(lootTable);
+        hydrateIcons(chip);
+      });
+      input.addEventListener("change", () => {
+        chip.innerHTML = lootTableChipHTML(lootTable);
+        hydrateIcons(chip);
+      });
+    });
+    list.appendChild(row);
+    hydrateIcons(row);
+  });
+}
+
+function normalizeLootProfile(row = {}, fallbackID = "") {
+  return {
+    lootTableID: String(row.lootTableID || row.id || fallbackID || "").trim(),
+    name: String(row.name || row.lootTableID || row.id || fallbackID || "Admin Loot Table").trim(),
+    minEntries: Number(row.minEntries) || 0,
+    maxEntries: Number(row.maxEntries) || Number(row.minEntries) || 0,
+    stackableMinQuantity: Number(row.stackableMinQuantity) || 0,
+    stackableMaxQuantity: Number(row.stackableMaxQuantity) || 0,
+    allowDuplicates: row.allowDuplicates === true,
+    guaranteedEntries: Array.isArray(row.guaranteedEntries) ? structuredClone(row.guaranteedEntries) : [],
+    entries: Array.isArray(row.entries) ? structuredClone(row.entries) : [],
+    notes: String(row.notes || "").trim(),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+async function loadLootProfiles() {
+  const data = await api("/api/npc-authoring/loot-tables");
+  state.lootProfiles = (data.lootTables || []).map((row) => normalizeLootProfile(row));
+  renderLootTableOptions();
+  renderLootProfiles();
+}
+
+function lootProfileChipHTML(lootTable) {
+  const existing = lookupNpcRow("npcLootTables", lootTable.lootTableID);
+  const entries = Array.isArray(lootTable.entries) ? lootTable.entries : [];
+  const guaranteedEntries = Array.isArray(lootTable.guaranteedEntries) ? lootTable.guaranteedEntries : [];
+  const kind = entries.length || guaranteedEntries.length
+    ? "explicit drop profile"
+    : "generic random profile";
+  const source = existing ? "overrides existing EveJS loot table" : "new utility loot table";
+  return `${icon(existing ? "package-check" : "package-open")}<div><strong>${escapeHTML(lootTable.name || lootTable.lootTableID || "Unnamed loot table profile")}</strong><span>${smallMeta([kind, source, `${guaranteedEntries.length} guaranteed`, `${entries.length} weighted`, `rolls ${lootTable.minEntries || 0}-${lootTable.maxEntries || 0}`, `stack ${lootTable.stackableMinQuantity || 0}-${lootTable.stackableMaxQuantity || 0}`])}</span></div>`;
+}
+
+function renderLootProfiles() {
+  const list = $("#lootProfileList");
+  if (!list) return;
+  list.innerHTML = "";
+  if (state.lootProfiles.length === 0) {
+    const blank = document.createElement("div");
+    blank.className = "editor-row";
+    blank.innerHTML = `<div class="blank-state">${icon("package-open")}<div><strong>No authored loot table profiles yet.</strong><span>Load an existing profile like generic_random_any or create a new profile.</span></div></div>`;
+    list.appendChild(blank);
+    hydrateIcons(blank);
+    return;
+  }
+  state.lootProfiles.forEach((lootTable, index) => {
+    const row = document.createElement("div");
+    row.className = "editor-row";
+    row.innerHTML = `
+      <div class="editor-row-grid">
+        <label class="wide"><span>Loot Table Profile ID</span><input data-field="lootTableID" list="npcLootTableOptions"></label>
+        <label class="wide"><span>Name</span><input data-field="name"></label>
+        <label><span>Min Entries</span><input data-field="minEntries" data-number="true" type="number" min="0"></label>
+        <label><span>Max Entries</span><input data-field="maxEntries" data-number="true" type="number" min="0"></label>
+        <label><span>Stack Min Qty</span><input data-field="stackableMinQuantity" data-number="true" type="number" min="0"></label>
+        <label><span>Stack Max Qty</span><input data-field="stackableMaxQuantity" data-number="true" type="number" min="0"></label>
+        <label class="checkbox-field"><input data-field="allowDuplicates" data-boolean="true" type="checkbox"><span>Allow Weighted Duplicates</span></label>
+        <label class="full"><span>Guaranteed Entries JSON</span><textarea data-field="guaranteedEntries" data-json="array" rows="4" placeholder='[{"typeID":34,"quantity":1000}]'></textarea></label>
+        <label class="full"><span>Weighted Entries JSON</span><textarea data-field="entries" data-json="array" rows="5" placeholder='[{"typeID":35,"weight":5,"minQuantity":1,"maxQuantity":3}]'></textarea></label>
+        <label class="full"><span>Notes</span><textarea data-field="notes" rows="2"></textarea></label>
+        <div class="resource-chip full" data-loot-profile-chip>${lootProfileChipHTML(lootTable)}</div>
+        <div class="editor-actions full">
+          <button class="primary save-loot-profile" type="button">${iconText("save", "Save Profile")}</button>
+          <button class="secondary copy-loot-profile" type="button">${iconText("copy", "Copy ID")}</button>
+          <button class="danger delete-loot-profile" type="button">${iconText("trash-2", "Delete")}</button>
+        </div>
+      </div>
+    `;
+    bindRow(row, lootTable, () => {});
+    const removeButton = row.querySelector(".remove-row");
+    if (removeButton) removeButton.remove();
+    const chip = row.querySelector("[data-loot-profile-chip]");
+    row.querySelectorAll("[data-field]").forEach((input) => {
+      input.addEventListener("input", () => {
+        chip.innerHTML = lootProfileChipHTML(lootTable);
+        hydrateIcons(chip);
+      });
+      input.addEventListener("change", () => {
+        chip.innerHTML = lootProfileChipHTML(lootTable);
+        hydrateIcons(chip);
+      });
+    });
+    row.querySelector(".save-loot-profile").addEventListener("click", () => saveLootProfile(index));
+    row.querySelector(".copy-loot-profile").addEventListener("click", async () => {
+      await navigator.clipboard.writeText(lootTable.lootTableID || "");
+      showNotice(`Copied ${lootTable.lootTableID}`);
+    });
+    row.querySelector(".delete-loot-profile").addEventListener("click", () => deleteLootProfile(index));
+    list.appendChild(row);
+    hydrateIcons(row);
+  });
+}
+
+async function saveLootProfile(index) {
+  const lootTable = state.lootProfiles[index];
+  if (!lootTable) return;
+  const result = await api("/api/npc-authoring/loot-tables", {
+    method: "POST",
+    body: lootTable,
+  });
+  state.lootProfiles[index] = normalizeLootProfile(result.lootTable);
+  renderLootTableOptions();
+  renderLootProfiles();
+  showNotice(`Saved loot table profile ${result.lootTable.lootTableID}.`);
+}
+
+async function deleteLootProfile(index) {
+  const lootTable = state.lootProfiles[index];
+  if (!lootTable) return;
+  if (lootTable.lootTableID) {
+    const confirmed = window.confirm(`Delete authored loot table profile "${lootTable.lootTableID}"?`);
+    if (!confirmed) return;
+    const response = await fetch(`/api/npc-authoring/loot-tables/${encodeURIComponent(lootTable.lootTableID)}`, {
+      method: "DELETE",
+    });
+    if (!response.ok && response.status !== 404) {
+      const data = await response.json();
+      throw new Error(data.error || data.errorMsg || `Delete failed: ${response.status}`);
+    }
+  }
+  state.lootProfiles.splice(index, 1);
+  renderLootTableOptions();
+  renderLootProfiles();
+  showNotice(`Deleted loot table profile ${lootTable.lootTableID || "draft"}.`);
+}
+
+async function loadLootProfileFromInput() {
+  const requestedID = $("#lootProfileSearchInput").value.trim();
+  if (!requestedID) {
+    showNotice("Enter a loot table profile ID first.");
+    return;
+  }
+  let row = null;
+  const authored = state.lootProfiles.find((entry) => entry.lootTableID === requestedID);
+  if (authored) {
+    row = authored;
+  } else {
+    try {
+      const existing = await api(`/api/npcs/lootTables/${encodeURIComponent(requestedID)}`);
+      row = existing.row;
+    } catch (error) {
+      showNotice(error.message || `Loot table profile ${requestedID} was not found.`);
+      return;
+    }
+  }
+  const normalized = normalizeLootProfile(row, requestedID);
+  const index = state.lootProfiles.findIndex((entry) => entry.lootTableID === normalized.lootTableID);
+  if (index >= 0) {
+    state.lootProfiles[index] = normalized;
+  } else {
+    state.lootProfiles.push(normalized);
+  }
+  renderLootTableOptions();
+  renderLootProfiles();
+  showNotice(`Loaded loot table profile ${normalized.lootTableID}.`);
+}
+
+function addNewLootProfile() {
+  const seed = $("#lootProfileSearchInput").value.trim();
+  state.lootProfiles.push(normalizeLootProfile({
+    ...defaultLootTable(),
+    lootTableID: seed || `admin_loot_profile_${state.lootProfiles.length + 1}`,
+    name: seed || "Admin Loot Table Profile",
+    stackableMinQuantity: 1,
+    stackableMaxQuantity: 25,
+    entries: [],
+  }));
+  renderLootTableOptions();
+  renderLootProfiles();
+}
+
 function writeFieldFromInput(input, object, field) {
+  if (input.dataset.boolean === "true") {
+    object[field] = input.checked === true;
+    return;
+  }
   if (input.dataset.json === "array") {
     try {
       object[field] = input.value.trim() ? JSON.parse(input.value) : [];
@@ -1011,9 +1398,13 @@ function writeFieldFromInput(input, object, field) {
 function bindRow(row, object, onRemove) {
   row.querySelectorAll("[data-field]").forEach((input) => {
     const field = input.dataset.field;
-    input.value = input.dataset.json === "array"
-      ? JSON.stringify(Array.isArray(object[field]) ? object[field] : [], null, 2)
-      : object[field] ?? "";
+    if (input.dataset.boolean === "true") {
+      input.checked = object[field] === true;
+    } else {
+      input.value = input.dataset.json === "array"
+        ? JSON.stringify(Array.isArray(object[field]) ? object[field] : [], null, 2)
+        : object[field] ?? "";
+    }
     input.addEventListener("input", () => {
       writeFieldFromInput(input, object, field);
       updatePreview();
@@ -1023,12 +1414,16 @@ function bindRow(row, object, onRemove) {
       updatePreview();
     });
   });
-  row.querySelector(".remove-row").addEventListener("click", onRemove);
+  const removeButton = row.querySelector(".remove-row");
+  if (removeButton) {
+    removeButton.addEventListener("click", onRemove);
+  }
 }
 
 function renderAll() {
   renderSelectedTemplate();
   renderEditorRows();
+  renderLootProfiles();
   renderSelectedSystem();
   updatePreview();
 }
@@ -1154,9 +1549,15 @@ async function loadOverlayIntoForm(overlay) {
   state.kind = legacyKindFromSelection(state.contentFamily, state.delivery);
   state.baseTemplate = null;
   state.selectedTemplateRaw = null;
+  state.rooms = Array.isArray(overlay.rooms) ? structuredClone(overlay.rooms) : [];
+  state.gates = Array.isArray(overlay.gates) ? structuredClone(overlay.gates) : [];
   state.encounters = Array.isArray(overlay.encounters) ? structuredClone(overlay.encounters) : [];
   state.resources = Array.isArray(overlay.resources) ? structuredClone(overlay.resources) : [];
   state.npcOverrides = Array.isArray(overlay.npcOverrides) ? structuredClone(overlay.npcOverrides) : [];
+  state.lootTables = Array.isArray(overlay.lootTables) ? structuredClone(overlay.lootTables) : [];
+  state.completion = overlay.completion && typeof overlay.completion === "object" ? structuredClone(overlay.completion) : null;
+  state.missionSecurity = overlay.missionSecurity && typeof overlay.missionSecurity === "object" ? structuredClone(overlay.missionSecurity) : null;
+  state.sourceLinks = Array.isArray(overlay.sourceLinks) ? structuredClone(overlay.sourceLinks) : [];
   $("#titleInput").value = overlay.title || "";
   $("#templateIdInput").value = overlay.templateID || overlay.baseTemplateID || "";
   $("#statusInput").value = overlay.status || "draft";
@@ -1205,9 +1606,15 @@ function resetDraftFields() {
   state.selectedTemplateRaw = null;
   state.selectedSystem = null;
   state.selectedGate = null;
+  state.rooms = [];
+  state.gates = [];
   state.encounters = [];
   state.resources = [];
   state.npcOverrides = [];
+  state.lootTables = [];
+  state.completion = null;
+  state.missionSecurity = null;
+  state.sourceLinks = [];
   state.scopeMode = "any_eligible";
   state.securityBands = ["highsec", "lowsec", "nullsec", "wormhole"];
   state.anchorKind = "system";
@@ -1277,12 +1684,147 @@ function renderSystemsView(systems) {
   });
 }
 
+function npcKindLabel(kind) {
+  return {
+    profiles: "profile",
+    loadouts: "loadout",
+    behaviorProfiles: "behavior",
+    spawnGroups: "spawn group",
+    spawnPools: "spawn pool",
+    lootTables: "loot table",
+    startupRules: "startup rule",
+  }[kind] || kind;
+}
+
+function npcSearchMeta(kind, row) {
+  if (kind === "profiles") {
+    return smallMeta([row.profileID, row.shipTypeName, row.entityType, row.loadoutID, row.lootTableID, row.bounty ? `${row.bounty} ISK` : ""]);
+  }
+  if (kind === "loadouts") {
+    return smallMeta([row.id, `${row.modulesCount || 0} modules`, `${row.chargesCount || 0} charges`, `${row.cargoCount || 0} cargo`]);
+  }
+  if (kind === "spawnGroups") {
+    return smallMeta([row.id, `${row.entriesCount || 0} entries`, `${row.memberCount || 0} members`, (row.sampleMembers || []).join(", ")]);
+  }
+  if (kind === "spawnPools") {
+    return smallMeta([row.id, `${row.entriesCount || 0} weighted entries`, row.entityType, (row.sampleProfiles || []).join(", ")]);
+  }
+  if (kind === "lootTables") {
+    return smallMeta([row.id, `${row.guaranteedEntriesCount || 0} guaranteed`, `${row.entriesCount || 0} weighted`, `rolls ${row.minEntries || 0}-${row.maxEntries || 0}`]);
+  }
+  return smallMeta([row.id, row.name]);
+}
+
+function entrySummaryHTML(entries, columns) {
+  const rows = Array.isArray(entries) ? entries.slice(0, 16) : [];
+  if (!rows.length) {
+    return `<div class="detail-empty">No entries.</div>`;
+  }
+  return `
+    <div class="detail-table">
+      ${rows.map((entry) => `
+        <div class="detail-table-row">
+          ${columns.map((column) => `<span>${escapeHTML(entry && entry[column] !== undefined ? entry[column] : "")}</span>`).join("")}
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function npcDetailSummaryHTML(kind, row) {
+  if (kind === "profiles") {
+    return `
+      <div class="detail-facts">
+        <span>${icon("ship")} ${escapeHTML(smallMeta([row.shipTypeID ? `ship ${row.shipTypeID}` : "", row.entityType]))}</span>
+        <span>${icon("brain")} ${escapeHTML(row.behaviorProfileID || "no behavior")}</span>
+        <span>${icon("wrench")} ${escapeHTML(row.loadoutID || "no loadout")}</span>
+        <span>${icon("package-open")} ${escapeHTML(row.lootTableID || "no loot table")}</span>
+        <span>${icon("circle-dollar-sign")} ${escapeHTML(row.bounty || 0)} ISK</span>
+      </div>
+    `;
+  }
+  if (kind === "loadouts") {
+    return `
+      <div class="detail-facts">
+        <span>${icon("wrench")} ${(Array.isArray(row.modules) ? row.modules.length : 0)} modules</span>
+        <span>${icon("battery-charging")} ${(Array.isArray(row.charges) ? row.charges.length : 0)} charges</span>
+        <span>${icon("package")} ${(Array.isArray(row.cargo) ? row.cargo.length : 0)} cargo</span>
+      </div>
+      <h4>Modules</h4>
+      ${entrySummaryHTML(row.modules, ["slot", "typeID", "name"])}
+      <h4>Charges</h4>
+      ${entrySummaryHTML(row.charges, ["typeID", "quantity"])}
+    `;
+  }
+  if (kind === "spawnPools") {
+    return `
+      <div class="detail-facts">
+        <span>${icon("shuffle")} ${(Array.isArray(row.entries) ? row.entries.length : 0)} weighted entries</span>
+        <span>${icon("tag")} ${escapeHTML(row.entityType || "any entity")}</span>
+      </div>
+      <h4>Weighted Profiles</h4>
+      ${entrySummaryHTML(row.entries, ["profileID", "weight"])}
+    `;
+  }
+  if (kind === "spawnGroups") {
+    return `
+      <div class="detail-facts">
+        <span>${icon("users")} ${(Array.isArray(row.entries) ? row.entries.length : 0)} composition entries</span>
+        <span>${icon("tag")} ${escapeHTML(row.entityType || "any entity")}</span>
+      </div>
+      <h4>Composition</h4>
+      ${entrySummaryHTML(row.entries, ["profileID", "spawnPoolID", "count", "minCount", "maxCount"])}
+    `;
+  }
+  if (kind === "lootTables") {
+    return `
+      <div class="detail-facts">
+        <span>${icon("dice-5")} rolls ${escapeHTML(row.minEntries || 0)}-${escapeHTML(row.maxEntries || 0)}</span>
+        <span>${icon("package-check")} ${(Array.isArray(row.guaranteedEntries) ? row.guaranteedEntries.length : 0)} guaranteed</span>
+        <span>${icon("shuffle")} ${(Array.isArray(row.entries) ? row.entries.length : 0)} weighted</span>
+        <span>${icon("copy")} ${row.allowDuplicates === true ? "duplicates allowed" : "unique weighted rolls"}</span>
+      </div>
+      <h4>Guaranteed Entries</h4>
+      ${entrySummaryHTML(row.guaranteedEntries, ["typeID", "quantity", "minQuantity", "maxQuantity"])}
+      <h4>Weighted Entries</h4>
+      ${entrySummaryHTML(row.entries, ["typeID", "weight", "quantity", "minQuantity", "maxQuantity"])}
+    `;
+  }
+  return `<div class="detail-facts"><span>${icon("file-json")} Raw ${escapeHTML(npcKindLabel(kind))} row</span></div>`;
+}
+
+async function showNpcDetail(kind, id) {
+  const detail = $("#npcDetail");
+  const data = await api(`/api/npcs/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`);
+  const row = data.row || {};
+  detail.hidden = false;
+  detail.innerHTML = `
+    <div class="section-heading">
+      <h3>${icon("bot")}<span>${escapeHTML(row.name || id)}</span></h3>
+      <button class="secondary" data-copy-id>${iconText("copy", "Copy ID")}</button>
+    </div>
+    <div class="item-meta">${escapeHTML(smallMeta([npcKindLabel(kind), id]))}</div>
+    <div class="detail-summary">${npcDetailSummaryHTML(kind, row)}</div>
+    <h4>Raw Row</h4>
+    <pre class="json-preview"></pre>
+  `;
+  detail.querySelector("pre").textContent = JSON.stringify(row, null, 2);
+  detail.querySelector("[data-copy-id]").addEventListener("click", async () => {
+    await navigator.clipboard.writeText(id);
+    showNotice(`Copied ${id}`);
+  });
+  hydrateIcons(detail);
+}
+
 async function searchNpcs() {
   const kind = $("#npcKindSelect").value;
   const q = encodeURIComponent($("#npcSearchInput").value.trim());
   const data = await api(`/api/npcs?kind=${kind}&q=${q}&limit=48`);
   const grid = $("#npcResults");
+  const detail = $("#npcDetail");
   grid.innerHTML = "";
+  detail.hidden = true;
+  detail.innerHTML = "";
   data.npcs.forEach((npc) => {
     const row = document.createElement("div");
     row.className = "data-row";
@@ -1291,12 +1833,18 @@ async function searchNpcs() {
         <div class="item-title"></div>
         <div class="item-meta"></div>
       </div>
-      <button class="secondary">${iconText("copy", "Copy")}</button>
+      <div class="overlay-actions">
+        <button class="secondary details-button">${iconText("eye", "Details")}</button>
+        <button class="secondary copy-button">${iconText("copy", "Copy")}</button>
+      </div>
     `;
     const id = npc.profileID || npc.id;
     row.querySelector(".item-title").textContent = npc.name || id;
-    row.querySelector(".item-meta").textContent = smallMeta([id, npc.shipTypeName, npc.entityType, npc.bounty ? `${npc.bounty} ISK` : ""]);
-    row.querySelector("button").addEventListener("click", async () => {
+    row.querySelector(".item-meta").textContent = npcSearchMeta(kind, npc);
+    row.querySelector(".details-button").addEventListener("click", () => {
+      showNpcDetail(kind, id).catch((error) => showNotice(error.message));
+    });
+    row.querySelector(".copy-button").addEventListener("click", async () => {
       await navigator.clipboard.writeText(id);
       showNotice(`Copied ${id}`);
     });
@@ -1337,6 +1885,68 @@ async function loadMissionIntoBuilder(mission) {
   applyDefaultsForCurrentContent();
   renderAll();
   showNotice(`Loaded mission ${mission.missionID} as mission-combat content.`);
+}
+
+async function loadSecurityMissionDraft(mission) {
+  const data = await api(`/api/mission-security/draft?missionID=${encodeURIComponent(mission.missionID)}`);
+  const draft = data.draft;
+  setView("builder");
+  state.contentFamily = "mission";
+  state.delivery = "mission_private";
+  state.missionType = "combat";
+  resetDraftFields();
+  state.rooms = Array.isArray(draft.rooms) ? structuredClone(draft.rooms) : [];
+  state.gates = Array.isArray(draft.gates) ? structuredClone(draft.gates) : [];
+  state.encounters = Array.isArray(draft.encounters) ? structuredClone(draft.encounters) : [];
+  state.completion = draft.completion && typeof draft.completion === "object" ? structuredClone(draft.completion) : null;
+  state.missionSecurity = draft.missionSecurity && typeof draft.missionSecurity === "object" ? structuredClone(draft.missionSecurity) : null;
+  state.sourceLinks = Array.isArray(draft.sourceLinks) ? structuredClone(draft.sourceLinks) : [];
+  state.baseTemplate = data.baseTemplate || null;
+  state.selectedTemplateRaw = state.baseTemplate && state.baseTemplate.raw ? state.baseTemplate.raw : null;
+  syncContentControls();
+  $("#titleInput").value = draft.title || mission.name || `Mission ${mission.missionID}`;
+  $("#templateIdInput").value = draft.templateID || `admin:mission-security:${mission.missionID}`;
+  $("#statusInput").value = draft.status || "draft";
+  $("#templateSearchInput").value = draft.baseTemplateID || mission.linkedTemplateID || "";
+  $("#notesInput").value = draft.notes || "";
+  await loadTemplateOptions({ selectedTemplateID: draft.baseTemplateID || mission.linkedTemplateID || "", q: "" });
+  renderAll();
+  showNotice(`Loaded Security draft for mission ${mission.missionID}.`);
+}
+
+async function searchSecurityMissions() {
+  const q = encodeURIComponent($("#securityMissionSearchInput").value.trim());
+  const data = await api(`/api/missions?missionType=combat&q=${q}&limit=96`);
+  const grid = $("#securityMissionResults");
+  grid.innerHTML = "";
+  data.missions.forEach((mission) => {
+    const row = document.createElement("div");
+    row.className = "data-row";
+    row.innerHTML = `
+      <div>
+        <div class="item-title"></div>
+        <div class="item-meta"></div>
+      </div>
+      <button class="secondary"></button>
+    `;
+    row.querySelector(".item-title").textContent = mission.name || `Mission ${mission.missionID}`;
+    row.querySelector(".item-meta").textContent = smallMeta([
+      `mission ${mission.missionID}`,
+      missionObjectiveSummary(mission),
+      mission.contentTemplate,
+      mission.linkedTemplateID,
+    ]);
+    const button = row.querySelector("button");
+    if (mission.linkedTemplateID) {
+      button.innerHTML = iconText("file-plus-2", "Author");
+      button.addEventListener("click", () => loadSecurityMissionDraft(mission));
+    } else {
+      button.innerHTML = iconText("info", "No Site");
+      button.disabled = true;
+    }
+    grid.appendChild(row);
+    hydrateIcons(row);
+  });
 }
 
 async function searchMissions() {
@@ -1384,6 +1994,7 @@ async function previewPack(write = false) {
   $("#packSummary").innerHTML = `
     <div class="summary-tile"><span>${icon("file-stack")}Templates</span><strong>${pack.templates.length}</strong></div>
     <div class="summary-tile"><span>${icon("crosshair")}Assignments</span><strong>${pack.assignments.length}</strong></div>
+    <div class="summary-tile"><span>${icon("package-open")}NPC Loot Tables</span><strong>${(pack.npcLootTables || []).length}</strong></div>
     <div class="summary-tile"><span>${icon("circle-alert")}Invalid</span><strong>${pack.validation.invalidOverlayCount}</strong></div>
     <div class="summary-tile"><span>${icon(write ? "file-check-2" : "eye")}Output</span><strong>${write ? "Written" : "Preview"}</strong></div>
   `;
@@ -1415,13 +2026,38 @@ function bindEvents() {
   $("#resourceSearchButton").addEventListener("click", searchResources);
   $("#resourceSearchInput").addEventListener("keydown", (event) => { if (event.key === "Enter") searchResources(); });
   $("#systemsViewButton").addEventListener("click", () => searchSystems("systems"));
+  $("#securityMissionSearchButton").addEventListener("click", searchSecurityMissions);
+  $("#securityMissionSearchInput").addEventListener("keydown", (event) => { if (event.key === "Enter") searchSecurityMissions(); });
   $("#missionSearchButton").addEventListener("click", searchMissions);
   $("#missionSearchInput").addEventListener("keydown", (event) => { if (event.key === "Enter") searchMissions(); });
   $("#missionTypeSelect").addEventListener("change", searchMissions);
   $("#npcSearchButton").addEventListener("click", searchNpcs);
   $("#npcSearchInput").addEventListener("keydown", (event) => { if (event.key === "Enter") searchNpcs(); });
+  $("#npcKindSelect").addEventListener("change", searchNpcs);
+  $("#loadLootProfileButton").addEventListener("click", loadLootProfileFromInput);
+  $("#lootProfileSearchInput").addEventListener("keydown", (event) => { if (event.key === "Enter") loadLootProfileFromInput(); });
+  $("#newLootProfileButton").addEventListener("click", addNewLootProfile);
   $("#addEncounterButton").addEventListener("click", () => {
     state.encounters.push({ profileID: "generic_hostile", count: 1, trigger: state.encounters.length ? "wave_cleared" : "on_load", targetPolicy: "nearest_player" });
+    renderAll();
+  });
+  $("#addMissionRoomButton").addEventListener("click", () => {
+    state.rooms.push({
+      roomKey: state.rooms.length === 0 ? "room:entry" : `room:mission_${state.rooms.length + 1}`,
+      label: state.rooms.length === 0 ? "Entry Pocket" : `Mission Room ${state.rooms.length + 1}`,
+      role: state.rooms.length === 0 ? "entry" : "combat",
+      initialState: state.rooms.length === 0 ? "active" : "pending",
+    });
+    renderAll();
+  });
+  $("#addMissionGateButton").addEventListener("click", () => {
+    state.gates.push({
+      gateKey: `gate:${state.gates.length + 1}`,
+      label: "Acceleration Gate",
+      typeID: 17831,
+      destinationRoomKey: state.rooms[1] && state.rooms[1].roomKey || "room:entry",
+      initialState: "unlocked",
+    });
     renderAll();
   });
   $("#addResourceButton").addEventListener("click", () => {
@@ -1430,6 +2066,10 @@ function bindEvents() {
   });
   $("#addOverrideButton").addEventListener("click", () => {
     state.npcOverrides.push({ profileID: "generic_hostile", damageMultiplier: 1 });
+    renderAll();
+  });
+  $("#addLootTableButton").addEventListener("click", () => {
+    state.lootTables.push(defaultLootTable());
     renderAll();
   });
   $("#validateButton").addEventListener("click", validateCurrent);
@@ -1458,9 +2098,11 @@ async function init() {
   setAnchorKind("system");
   await loadStatus();
   await loadBuilderLookups();
+  await loadLootProfiles();
   await loadTemplateOptions();
   await loadOverlays();
   await searchSystems("systems");
+  await searchSecurityMissions();
   await searchMissions();
   await searchNpcs();
   await loadResearch();

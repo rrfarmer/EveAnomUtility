@@ -29,6 +29,15 @@ const {
   validateOverlay,
 } = require("./lib/validator");
 const {
+  buildSecurityMissionDraft,
+} = require("./lib/missionSecurity");
+const {
+  deleteAuthoredLootTable,
+  getAuthoredLootTable,
+  listAuthoredLootTables,
+  saveAuthoredLootTable,
+} = require("./lib/npcAuthoringStore");
+const {
   PACK_FILE,
   buildTemplatePack,
 } = require("./lib/templatePack");
@@ -193,6 +202,12 @@ async function routeApi(req, res, url) {
     return true;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/mission-security/draft") {
+    const result = buildSecurityMissionDraft(url.searchParams.get("missionID"));
+    sendJson(res, result.success ? 200 : 404, result);
+    return true;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/npcs") {
     sendJson(res, 200, {
       success: true,
@@ -202,6 +217,40 @@ async function routeApi(req, res, url) {
         url.searchParams.get("limit"),
       ),
     });
+    return true;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/npc-authoring/loot-tables") {
+    sendJson(res, 200, {
+      success: true,
+      lootTables: await listAuthoredLootTables(),
+    });
+    return true;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/npc-authoring/loot-tables") {
+    const result = await saveAuthoredLootTable(await readBody(req));
+    sendJson(res, 200, result);
+    return true;
+  }
+
+  const authoredLootMatch = url.pathname.match(/^\/api\/npc-authoring\/loot-tables\/(.+)$/);
+  if (req.method === "GET" && authoredLootMatch) {
+    const lootTable = await getAuthoredLootTable(decodeURIComponent(authoredLootMatch[1]));
+    if (!lootTable) {
+      sendError(res, 404, "Authored loot table not found.");
+      return true;
+    }
+    sendJson(res, 200, {
+      success: true,
+      lootTable,
+    });
+    return true;
+  }
+
+  if (req.method === "DELETE" && authoredLootMatch) {
+    const result = await deleteAuthoredLootTable(decodeURIComponent(authoredLootMatch[1]));
+    sendJson(res, result.success ? 200 : 404, result);
     return true;
   }
 

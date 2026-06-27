@@ -94,12 +94,19 @@ function sanitizeOverlay(input = {}) {
     scanner: input.scanner && typeof input.scanner === "object"
       ? input.scanner
       : { visibility: input.kind === "mission_combat" ? "private_mission" : "anomaly", signalStrength: 100 },
+    rooms: Array.isArray(input.rooms) ? input.rooms : [],
+    gates: Array.isArray(input.gates) ? input.gates : [],
     encounters: Array.isArray(input.encounters) ? input.encounters : [],
     resources: Array.isArray(input.resources) ? input.resources : [],
     npcOverrides: Array.isArray(input.npcOverrides) ? input.npcOverrides : [],
+    lootTables: Array.isArray(input.lootTables) ? input.lootTables : [],
     completion: input.completion && typeof input.completion === "object"
       ? input.completion
       : { mode: "manual", despawnDelaySeconds: 0 },
+    missionSecurity: input.missionSecurity && typeof input.missionSecurity === "object"
+      ? input.missionSecurity
+      : null,
+    sourceLinks: Array.isArray(input.sourceLinks) ? input.sourceLinks : [],
     notes: String(input.notes || "").trim(),
     createdAt: input.createdAt || now,
     updatedAt: now,

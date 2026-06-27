@@ -19,8 +19,10 @@
         <nav class="nav">
           <button class="nav-button is-active" data-view="builder"><i data-lucide="wrench" class="icon"></i><span>Builder</span></button>
           <button class="nav-button" data-view="systems"><i data-lucide="map" class="icon"></i><span>Systems</span></button>
+          <button class="nav-button" data-view="mission-security"><i data-lucide="shield" class="icon"></i><span>Security</span></button>
           <button class="nav-button" data-view="missions"><i data-lucide="briefcase" class="icon"></i><span>Missions</span></button>
           <button class="nav-button" data-view="npcs"><i data-lucide="bot" class="icon"></i><span>NPCs</span></button>
+          <button class="nav-button" data-view="loot"><i data-lucide="package-open" class="icon"></i><span>Loot</span></button>
           <button class="nav-button" data-view="pack"><i data-lucide="package" class="icon"></i><span>Pack</span></button>
           <button class="nav-button" data-view="research"><i data-lucide="book-open" class="icon"></i><span>Research</span></button>
         </nav>
@@ -58,6 +60,8 @@
         <datalist id="npcLoadoutOptions"></datalist>
         <datalist id="npcBehaviorOptions"></datalist>
         <datalist id="npcSpawnGroupOptions"></datalist>
+        <datalist id="npcSpawnPoolOptions"></datalist>
+        <datalist id="npcLootTableOptions"></datalist>
         <datalist id="resourceTypeOptions"></datalist>
 
         <section class="view is-active" id="view-builder">
@@ -86,7 +90,7 @@
                 <label class="mission-category-field" id="missionCategoryField" hidden>
                   <span>Mission Category</span>
                   <select id="builderMissionTypeSelect">
-                    <option value="combat">Combat</option>
+                    <option value="combat">Security</option>
                     <option value="courier">Courier</option>
                     <option value="mining">Mining</option>
                     <option value="trade">Trade</option>
@@ -200,6 +204,17 @@
               </div>
               <div id="encounterList" class="editor-list"></div>
 
+              <div class="mission-layout-section">
+                <div class="section-heading">
+                  <h3><i data-lucide="door-open" class="icon"></i><span>Mission Rooms</span></h3>
+                  <div class="topbar-actions">
+                    <button class="secondary" id="addMissionRoomButton"><i data-lucide="plus" class="icon"></i><span>Room</span></button>
+                    <button class="secondary" id="addMissionGateButton"><i data-lucide="plus" class="icon"></i><span>Gate</span></button>
+                  </div>
+                </div>
+                <div id="missionLayoutList" class="editor-list"></div>
+              </div>
+
               <div class="section-heading">
                 <h3><i data-lucide="gem" class="icon"></i><span>Resources</span></h3>
                 <button class="secondary" id="addResourceButton"><i data-lucide="plus" class="icon"></i><span>Add Resource</span></button>
@@ -216,6 +231,12 @@
                 <button class="secondary" id="addOverrideButton"><i data-lucide="plus" class="icon"></i><span>Add Override</span></button>
               </div>
               <div id="overrideList" class="editor-list"></div>
+
+              <div class="section-heading">
+                <h3><i data-lucide="package-open" class="icon"></i><span>Loot Tables</span></h3>
+                <button class="secondary" id="addLootTableButton"><i data-lucide="plus" class="icon"></i><span>Add Loot Table</span></button>
+              </div>
+              <div id="lootTableList" class="editor-list"></div>
 
               <label class="notes-label">
                 <span>Notes</span>
@@ -272,6 +293,7 @@
                   <option value="behaviorProfiles">Behavior</option>
                   <option value="spawnGroups">Spawn Groups</option>
                   <option value="spawnPools">Spawn Pools</option>
+                  <option value="lootTables">Loot Tables</option>
                   <option value="startupRules">Startup Rules</option>
                 </select>
                 <input id="npcSearchInput" placeholder="Search NPC data">
@@ -279,6 +301,21 @@
               </div>
             </div>
             <div id="npcResults" class="data-grid"></div>
+            <div id="npcDetail" class="data-detail" hidden></div>
+          </section>
+        </section>
+
+        <section class="view" id="view-loot">
+          <section class="panel">
+            <div class="section-heading">
+              <h3><i data-lucide="package-open" class="icon"></i><span>Loot Table Profiles</span></h3>
+              <div class="catalog-tools loot-profile-tools">
+                <input id="lootProfileSearchInput" list="npcLootTableOptions" placeholder="generic_random_any or new loot table ID">
+                <button class="secondary square" id="loadLootProfileButton"><i data-lucide="download" class="icon"></i><span>Load</span></button>
+                <button class="secondary square" id="newLootProfileButton"><i data-lucide="plus" class="icon"></i><span>New</span></button>
+              </div>
+            </div>
+            <div id="lootProfileList" class="editor-list"></div>
           </section>
         </section>
 
@@ -291,7 +328,7 @@
                   <span>Mission Category</span>
                   <select id="missionTypeSelect">
                     <option value="all">All</option>
-                    <option value="combat">Combat</option>
+                    <option value="combat">Security</option>
                     <option value="courier">Courier</option>
                     <option value="mining">Mining</option>
                     <option value="trade">Trade</option>
@@ -305,6 +342,19 @@
               </div>
             </div>
             <div id="missionResults" class="data-grid"></div>
+          </section>
+        </section>
+
+        <section class="view" id="view-mission-security">
+          <section class="panel">
+            <div class="section-heading">
+              <h3><i data-lucide="shield" class="icon"></i><span>Missions: Security</span></h3>
+              <div class="catalog-tools">
+                <input id="securityMissionSearchInput" placeholder="Search Security mission name, ID, or dungeon">
+                <button class="secondary square" id="securityMissionSearchButton"><i data-lucide="search" class="icon"></i><span>Search</span></button>
+              </div>
+            </div>
+            <div id="securityMissionResults" class="data-grid"></div>
           </section>
         </section>
 

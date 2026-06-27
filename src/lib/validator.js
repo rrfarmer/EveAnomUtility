@@ -324,6 +324,8 @@ function validateOverlay(input = {}) {
     }
     const profileID = text(encounter && encounter.profileID);
     const spawnGroupID = text(encounter && encounter.spawnGroupID);
+    const spawnPoolID = text(encounter && encounter.spawnPoolID);
+    const spawnQuery = text(encounter && encounter.spawnQuery);
     if (profileID && !catalog.npcProfilesByID.has(profileID)) {
       findings.push({
         level: "error",
@@ -338,14 +340,40 @@ function validateOverlay(input = {}) {
         message: `NPC spawn group not found: ${spawnGroupID}`,
       });
     }
-    if (!profileID && !spawnGroupID && !text(encounter && encounter.spawnPoolID)) {
+    if (spawnPoolID && !catalog.npcSpawnPoolsByID.has(spawnPoolID)) {
+      findings.push({
+        level: "error",
+        path: `$.encounters[${index}].spawnPoolID`,
+        message: `NPC spawn pool not found: ${spawnPoolID}`,
+      });
+    }
+    if (!profileID && !spawnGroupID && !spawnPoolID && !spawnQuery) {
       findings.push({
         level: "error",
         path: `$.encounters[${index}]`,
-        message: "Encounter needs an NPC profile, spawn group, or spawn pool.",
+        message: "Encounter needs an NPC profile, spawn group, spawn pool, or EveJS spawnQuery.",
       });
     }
   });
+
+  const rooms = Array.isArray(input.rooms) ? input.rooms : [];
+  const gates = Array.isArray(input.gates) ? input.gates : [];
+  if (contentFamily === "mission" && missionType === "combat") {
+    if (rooms.length === 0) {
+      findings.push({
+        level: "warning",
+        path: "$.rooms",
+        message: "Security mission drafts should define at least an entry room.",
+      });
+    }
+    if (rooms.length > 1 && gates.length === 0) {
+      findings.push({
+        level: "warning",
+        path: "$.gates",
+        message: "Multi-room Security mission drafts should define an acceleration gate.",
+      });
+    }
+  }
 
   const resources = Array.isArray(input.resources) ? input.resources : [];
   if (contentFamily === "resource" && resources.length === 0) {
@@ -400,6 +428,18 @@ function validateOverlay(input = {}) {
         message: `NPC behavior profile not found: ${behaviorProfileID}`,
       });
     }
+    const lootTableID = text(override && override.lootTableID);
+    if (lootTableID && !catalog.npcLootTablesByID.has(lootTableID)) {
+      const authoredLootTables = Array.isArray(input.lootTables) ? input.lootTables : [];
+      const authoredMatch = authoredLootTables.some((lootTable) => text(lootTable && lootTable.lootTableID) === lootTableID);
+      if (!authoredMatch) {
+        findings.push({
+          level: "error",
+          path: `$.npcOverrides[${index}].lootTableID`,
+          message: `NPC loot table not found: ${lootTableID}`,
+        });
+      }
+    }
     const damageMultiplier = toNumber(override && override.damageMultiplier, 1);
     if (damageMultiplier <= 0 || damageMultiplier > 25) {
       findings.push({
@@ -416,6 +456,83 @@ function validateOverlay(input = {}) {
         level: "error",
         path: `$.npcOverrides[${index}].moduleOverrides`,
         message: "Module overrides must be a JSON array.",
+      });
+    }
+  });
+
+  const authoredLootTables = Array.isArray(input.lootTables) ? input.lootTables : [];
+  const authoredLootTableIDs = new Set();
+  authoredLootTables.forEach((lootTable, index) => {
+    const lootTableID = text(lootTable && lootTable.lootTableID);
+    if (!lootTableID) {
+      findings.push({
+        level: "error",
+        path: `$.lootTables[${index}].lootTableID`,
+        message: "Authored loot table needs a lootTableID.",
+      });
+    } else if (authoredLootTableIDs.has(lootTableID)) {
+      findings.push({
+        level: "error",
+        path: `$.lootTables[${index}].lootTableID`,
+        message: `Duplicate authored loot table ID: ${lootTableID}`,
+      });
+    } else {
+      authoredLootTableIDs.add(lootTableID);
+      if (catalog.npcLootTablesByID.has(lootTableID)) {
+        findings.push({
+          level: "warning",
+          path: `$.lootTables[${index}].lootTableID`,
+          message: `Authored loot table ${lootTableID} overrides an existing EveJS loot table ID in generated output.`,
+        });
+      }
+    }
+
+    const minEntries = toInt(lootTable && lootTable.minEntries, 0);
+    const maxEntries = toInt(lootTable && lootTable.maxEntries, minEntries);
+    if (minEntries < 0 || maxEntries < minEntries) {
+      findings.push({
+        level: "error",
+        path: `$.lootTables[${index}]`,
+        message: "Loot table maxEntries must be greater than or equal to minEntries.",
+      });
+    }
+
+    for (const entryKey of ["guaranteedEntries", "entries"]) {
+      const entries = lootTable && lootTable[entryKey];
+      if (entries !== undefined && !Array.isArray(entries)) {
+        findings.push({
+          level: "error",
+          path: `$.lootTables[${index}].${entryKey}`,
+          message: "Loot entries must be a JSON array.",
+        });
+        continue;
+      }
+      (Array.isArray(entries) ? entries : []).forEach((entry, entryIndex) => {
+        const typeID = toInt(entry && entry.typeID, 0);
+        if (!typeID || !catalog.itemTypesByID.has(typeID)) {
+          findings.push({
+            level: "error",
+            path: `$.lootTables[${index}].${entryKey}[${entryIndex}].typeID`,
+            message: "Loot entry typeID must be an existing client/SDE type ID.",
+          });
+        }
+        if (entryKey === "entries" && toNumber(entry && entry.weight, 0) <= 0) {
+          findings.push({
+            level: "error",
+            path: `$.lootTables[${index}].entries[${entryIndex}].weight`,
+            message: "Weighted loot entries need a weight greater than zero.",
+          });
+        }
+        const minQuantity = toInt(entry && entry.minQuantity, 0);
+        const maxQuantity = toInt(entry && entry.maxQuantity, minQuantity);
+        const quantity = toInt(entry && entry.quantity, 0);
+        if (quantity < 0 || minQuantity < 0 || maxQuantity < minQuantity) {
+          findings.push({
+            level: "error",
+            path: `$.lootTables[${index}].${entryKey}[${entryIndex}]`,
+            message: "Loot quantities must be non-negative and maxQuantity must be at least minQuantity.",
+          });
+        }
       });
     }
   });

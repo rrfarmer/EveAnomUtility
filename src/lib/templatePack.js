@@ -5,6 +5,7 @@ const {
   writeJsonFileAtomic,
 } = require("./dataStore");
 const { getCatalog } = require("./catalog");
+const { listAuthoredLootTables } = require("./npcAuthoringStore");
 const { listOverlays } = require("./overlayStore");
 const { validateOverlay } = require("./validator");
 
@@ -194,23 +195,73 @@ function normalizeSpawnScope(catalog, overlay) {
 function normalizeEncounter(catalog, encounter, index) {
   const profileID = text(encounter && encounter.profileID);
   const spawnGroupID = text(encounter && encounter.spawnGroupID);
+  const spawnPoolID = text(encounter && encounter.spawnPoolID);
+  const spawnQuery = text(encounter && encounter.spawnQuery) || spawnGroupID || profileID || spawnPoolID;
   const profile = profileID ? catalog.npcProfilesByID.get(profileID) : null;
   const spawnGroup = spawnGroupID ? catalog.npcSpawnGroupsByID.get(spawnGroupID) : null;
+  const spawnPool = spawnPoolID ? catalog.npcSpawnPoolsByID.get(spawnPoolID) : null;
+  const amount = Math.max(1, toInt(encounter && (encounter.amount || encounter.count), 1));
   return {
     key: text(encounter && encounter.key) || `wave_${index + 1}`,
     label: text(encounter && encounter.label) || `Wave ${index + 1}`,
     trigger: text(encounter && encounter.trigger) || (index === 0 ? "on_load" : "wave_cleared"),
-    count: Math.max(1, toInt(encounter && encounter.count, 1)),
+    count: amount,
+    amount,
+    spawnQuery: spawnQuery || null,
     profileID: profileID || null,
     profileName: profile ? profile.name : null,
     spawnGroupID: spawnGroupID || null,
     spawnGroupName: spawnGroup ? spawnGroup.name : null,
-    spawnPoolID: text(encounter && encounter.spawnPoolID) || null,
+    spawnPoolID: spawnPoolID || null,
+    spawnPoolName: spawnPool ? spawnPool.name : null,
     delaySeconds: Math.max(0, Number(encounter && encounter.delaySeconds) || 0),
+    countdownSeconds: Math.max(0, Number(encounter && (encounter.countdownSeconds || encounter.delaySeconds)) || 0) || null,
     orbitDistanceMeters: Number(encounter && encounter.orbitDistanceMeters) || null,
+    distanceMeters: Number(encounter && encounter.distanceMeters) || null,
     leashRangeMeters: Number(encounter && encounter.leashRangeMeters) || null,
     targetPolicy: text(encounter && encounter.targetPolicy) || "nearest_player",
+    roomKey: text(encounter && encounter.roomKey) || null,
+    waveIndex: Math.max(1, toInt(encounter && encounter.waveIndex, index + 1)),
+    prerequisiteKey: text(encounter && encounter.prerequisiteKey) || null,
+    objective: encounter && encounter.objective === true,
+    completionRole: text(encounter && encounter.completionRole) || null,
+    sourceGroup: text(encounter && encounter.sourceGroup) || null,
+    variantNames: Array.isArray(encounter && encounter.variantNames) ? clone(encounter.variantNames) : [],
     notes: text(encounter && encounter.notes),
+  };
+}
+
+function normalizeRoom(room, index) {
+  return {
+    roomKey: text(room && room.roomKey) || (index === 0 ? "room:entry" : `room:mission_${index + 1}`),
+    label: text(room && room.label) || (index === 0 ? "Entry Pocket" : `Mission Room ${index + 1}`),
+    source: text(room && room.source) || "eve_anom_utility",
+    role: text(room && room.role) || null,
+    stage: text(room && room.stage) || (index === 0 ? "entry" : "room"),
+    initialState: text(room && room.initialState) || text(room && room.state) || (index === 0 ? "active" : "pending"),
+    pocketID: toInt(room && room.pocketID, 0) || null,
+    notes: text(room && room.notes) || null,
+  };
+}
+
+function normalizeGate(gate, index) {
+  return {
+    gateKey: text(gate && gate.gateKey) || `gate:${index + 1}`,
+    label: text(gate && gate.label) || "Acceleration Gate",
+    typeID: toInt(gate && gate.typeID, 17831) || 17831,
+    typeNameCandidates: Array.isArray(gate && gate.typeNameCandidates)
+      ? clone(gate.typeNameCandidates)
+      : ["Acceleration Gate"],
+    source: text(gate && gate.source) || "eve_anom_utility",
+    fromObjectID: toInt(gate && gate.fromObjectID, 0) || null,
+    toObjectID: toInt(gate && gate.toObjectID, 0) || null,
+    destinationRoomKey: text(gate && gate.destinationRoomKey) || "room:entry",
+    initialState: text(gate && gate.initialState) || text(gate && gate.state) || "locked",
+    allowedShipsList: toInt(gate && gate.allowedShipsList, 0) || null,
+    allowedRaces: Array.isArray(gate && gate.allowedRaces) ? clone(gate.allowedRaces) : [],
+    keyLock: toInt(gate && gate.keyLock, 0) || null,
+    requiredItemTypeID: toInt(gate && gate.requiredItemTypeID, 0) || null,
+    requiredItemQuantity: toInt(gate && gate.requiredItemQuantity, 0) || null,
   };
 }
 
@@ -302,11 +353,13 @@ function normalizeNpcOverride(catalog, override) {
   const profile = profileID ? catalog.npcProfilesByID.get(profileID) : null;
   const loadoutID = text(override && override.loadoutID);
   const behaviorProfileID = text(override && override.behaviorProfileID);
+  const lootTableID = text(override && override.lootTableID);
   return {
     profileID,
     profileName: profile ? profile.name : null,
     loadoutID: loadoutID || null,
     behaviorProfileID: behaviorProfileID || null,
+    lootTableID: lootTableID || null,
     damageMultiplier: Number(override && override.damageMultiplier) || 1,
     bounty: Number.isFinite(Number(override && override.bounty)) ? Number(override.bounty) : null,
     preferredTargetMode: text(override && override.preferredTargetMode) || null,
@@ -314,6 +367,73 @@ function normalizeNpcOverride(catalog, override) {
       ? clone(override.moduleOverrides)
       : [],
   };
+}
+
+function normalizeLootEntry(catalog, entry) {
+  const typeID = toInt(entry && entry.typeID, 0);
+  const itemType = catalog.itemTypesByID.get(typeID);
+  const weight = Math.max(0, Number(entry && entry.weight) || 0);
+  const quantity = toInt(entry && entry.quantity, 0);
+  const minQuantity = toInt(entry && entry.minQuantity, 0);
+  const maxQuantity = toInt(entry && entry.maxQuantity, 0);
+  return {
+    typeID,
+    name: text(itemType && (itemType.name || itemType.typeName)) || null,
+    ...(weight > 0 ? { weight } : {}),
+    ...(quantity > 0 ? { quantity } : {}),
+    ...(minQuantity > 0 ? { minQuantity } : {}),
+    ...(maxQuantity > 0 ? { maxQuantity } : {}),
+    ...(entry && entry.singleton === true ? { singleton: true } : {}),
+  };
+}
+
+function normalizeAuthoredLootTable(catalog, lootTable, index) {
+  const lootTableID = text(lootTable && lootTable.lootTableID) || `admin_loot_table_${index + 1}`;
+  const minEntries = Math.max(0, toInt(lootTable && lootTable.minEntries, 0));
+  const maxEntries = Math.max(minEntries, toInt(lootTable && lootTable.maxEntries, minEntries));
+  const entries = Array.isArray(lootTable && lootTable.entries)
+    ? lootTable.entries.map((entry) => normalizeLootEntry(catalog, entry)).filter((entry) => entry.typeID > 0)
+    : [];
+  const guaranteedEntries = Array.isArray(lootTable && lootTable.guaranteedEntries)
+    ? lootTable.guaranteedEntries.map((entry) => normalizeLootEntry(catalog, entry)).filter((entry) => entry.typeID > 0)
+    : [];
+  return {
+    lootTableID,
+    name: text(lootTable && lootTable.name) || lootTableID,
+    source: "eve_anom_utility",
+    minEntries,
+    maxEntries,
+    ...(lootTable && lootTable.allowDuplicates === true ? { allowDuplicates: true } : {}),
+    ...(toInt(lootTable && lootTable.stackableMinQuantity, 0) > 0
+      ? { stackableMinQuantity: toInt(lootTable && lootTable.stackableMinQuantity, 0) }
+      : {}),
+    ...(toInt(lootTable && lootTable.stackableMaxQuantity, 0) > 0
+      ? { stackableMaxQuantity: toInt(lootTable && lootTable.stackableMaxQuantity, 0) }
+      : {}),
+    guaranteedEntries,
+    entries,
+    notes: text(lootTable && lootTable.notes) || null,
+  };
+}
+
+function authoredLootTablesForOverlay(catalog, overlay) {
+  return (Array.isArray(overlay.lootTables) ? overlay.lootTables : [])
+    .map((lootTable, index) => normalizeAuthoredLootTable(catalog, lootTable, index))
+    .filter((lootTable) => text(lootTable.lootTableID));
+}
+
+function collectAuthoredLootTables(catalog, overlays, globalLootTables = []) {
+  const byID = new Map();
+  for (const lootTable of Array.isArray(globalLootTables) ? globalLootTables : []) {
+    const normalized = normalizeAuthoredLootTable(catalog, lootTable, byID.size);
+    byID.set(normalized.lootTableID, normalized);
+  }
+  for (const overlay of overlays) {
+    for (const lootTable of authoredLootTablesForOverlay(catalog, overlay)) {
+      byID.set(lootTable.lootTableID, lootTable);
+    }
+  }
+  return [...byID.values()].sort((left, right) => left.lootTableID.localeCompare(right.lootTableID));
 }
 
 function buildGeneratedTemplate(catalog, overlay) {
@@ -326,9 +446,19 @@ function buildGeneratedTemplate(catalog, overlay) {
   const baseRaw = catalog.templatesByID.get(text(overlay.baseTemplateID));
   const encounters = (Array.isArray(overlay.encounters) ? overlay.encounters : [])
     .map((encounter, index) => normalizeEncounter(catalog, encounter, index));
+  const authoredRooms = (Array.isArray(overlay.rooms) ? overlay.rooms : [])
+    .map((room, index) => normalizeRoom(room, index))
+    .filter((room) => text(room.roomKey));
+  const roomProfiles = authoredRooms.length > 0
+    ? authoredRooms
+    : [{ roomKey: "room:entry", label: "Entry Pocket", source: "eve_anom_utility", initialState: "active" }];
+  const authoredGates = (Array.isArray(overlay.gates) ? overlay.gates : [])
+    .map((gate, index) => normalizeGate(gate, index))
+    .filter((gate) => text(gate.gateKey));
   const authoredResources = (Array.isArray(overlay.resources) ? overlay.resources : [])
     .map((resource) => normalizeResource(catalog, resource))
     .filter((resource) => resource.typeID > 0);
+  const authoredLootTables = authoredLootTablesForOverlay(catalog, overlay);
   const resourceComposition = buildResourceComposition(authoredResources, siteFamily);
   const objectiveMarkers = buildObjectiveMarkers(siteFamily, encounters, resourceComposition);
   return {
@@ -349,6 +479,21 @@ function buildGeneratedTemplate(catalog, overlay) {
     factionID: toInt(baseTemplate && baseTemplate.factionID, 0) || null,
     difficulty: toInt(baseTemplate && baseTemplate.difficulty, 0) || null,
     entryObjectTypeID: toInt(baseRaw && baseRaw.raw && baseRaw.raw.entryObjectTypeID, 0) || null,
+    rooms: roomProfiles,
+    gates: authoredGates,
+    connections: authoredGates.map((gate, index) => ({
+      connectionKey: text(gate.gateKey) || `gate:${index + 1}`,
+      gateKey: text(gate.gateKey) || `gate:${index + 1}`,
+      fromObjectID: toInt(gate.fromObjectID, 0) || null,
+      toObjectID: toInt(gate.toObjectID, 0) || null,
+      destinationRoomKey: text(gate.destinationRoomKey) || null,
+      allowedShipsList: toInt(gate.allowedShipsList, 0) || null,
+      allowedRaces: Array.isArray(gate.allowedRaces) ? clone(gate.allowedRaces) : [],
+      initialState: text(gate.initialState) || null,
+      keyLock: toInt(gate.keyLock, 0) || null,
+      requiredItemTypeID: toInt(gate.requiredItemTypeID, 0) || null,
+      requiredItemQuantity: toInt(gate.requiredItemQuantity, 0) || null,
+    })),
     resourceComposition,
     populationHints: {
       source: "eve_anom_utility",
@@ -356,10 +501,16 @@ function buildGeneratedTemplate(catalog, overlay) {
       siteKind,
       encounter: encounters[0] || null,
       encounters,
+      completion: overlay.completion || {},
       containers: [],
       hazards: [],
       environmentProps: [],
-      lootProfiles: [],
+      lootProfiles: authoredLootTables.map((lootTable) => ({
+        lootTableID: lootTable.lootTableID,
+        name: lootTable.name,
+        entries: lootTable.entries.length,
+        guaranteedEntries: lootTable.guaranteedEntries.length,
+      })),
       resources: {
         oreTypeIDs: resourceComposition.oreTypeIDs,
         gasTypeIDs: resourceComposition.gasTypeIDs,
@@ -378,13 +529,8 @@ function buildGeneratedTemplate(catalog, overlay) {
         score: 95,
       },
       evidence: ["eve_anom_utility_template_pack"],
-      roomProfiles: [
-        {
-          roomKey: "room:entry",
-          label: "Entry Pocket",
-        },
-      ],
-      gateProfiles: [],
+      roomProfiles,
+      gateProfiles: authoredGates,
       structureProfiles: [],
       objectiveVisualProfiles: objectiveMarkers.map((marker) => ({
         role: marker.role,
@@ -407,6 +553,11 @@ function buildGeneratedTemplate(catalog, overlay) {
       baseTemplate,
       scanner: overlay.scanner,
       authoredResources,
+      authoredRooms: roomProfiles,
+      authoredGates,
+      authoredLootTables,
+      missionSecurity: overlay.missionSecurity || null,
+      sourceLinks: Array.isArray(overlay.sourceLinks) ? clone(overlay.sourceLinks) : [],
       completion: overlay.completion || {},
       notes: overlay.notes || "",
       authoredBy: "EveAnomUtility",
@@ -419,7 +570,15 @@ function buildGeneratedTemplate(catalog, overlay) {
     ...(missionType ? { missionType } : {}),
     baseTemplate,
     scanner: overlay.scanner,
+    rooms: roomProfiles,
+    gates: authoredGates,
+    missionSecurity: overlay.missionSecurity || null,
+    sourceLinks: Array.isArray(overlay.sourceLinks) ? clone(overlay.sourceLinks) : [],
     completion: overlay.completion || {},
+    npcAuthoring: {
+      lootTables: authoredLootTables,
+    },
+    lootTables: authoredLootTables,
     notes: overlay.notes || "",
     authoredBy: "EveAnomUtility",
     authoredAt: overlay.updatedAt,
@@ -447,7 +606,10 @@ function buildAssignment(catalog, overlay) {
 
 async function buildTemplatePack(options = {}) {
   const catalog = getCatalog();
-  const overlays = await listOverlays();
+  const [overlays, globalLootTables] = await Promise.all([
+    listOverlays(),
+    listAuthoredLootTables(),
+  ]);
   const selected = overlays.filter((overlay) => {
     if (options.includeDrafts === false && overlay.status === "draft") return false;
     return validateOverlay(overlay).ok;
@@ -474,6 +636,7 @@ async function buildTemplatePack(options = {}) {
     ],
     templates: selected.map((overlay) => buildGeneratedTemplate(catalog, overlay)),
     assignments: selected.map((overlay) => buildAssignment(catalog, overlay)),
+    npcLootTables: collectAuthoredLootTables(catalog, selected, globalLootTables),
     validation: {
       validOverlayCount: selected.length,
       invalidOverlayCount: invalid.length,

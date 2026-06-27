@@ -315,6 +315,75 @@ function normalizeNpcProfile(profile, itemTypesByID) {
   };
 }
 
+function normalizeNpcLoadout(row) {
+  const modules = Array.isArray(row && row.modules) ? row.modules : [];
+  const charges = Array.isArray(row && row.charges) ? row.charges : [];
+  const cargo = Array.isArray(row && row.cargo) ? row.cargo : [];
+  return {
+    id: normalizeText(row && row.loadoutID),
+    name: normalizeText(row && row.name),
+    modulesCount: modules.length,
+    chargesCount: charges.length,
+    cargoCount: cargo.length,
+    raw: row,
+  };
+}
+
+function normalizeNpcLootTable(row) {
+  const entries = Array.isArray(row && row.entries) ? row.entries : [];
+  const guaranteedEntries = Array.isArray(row && row.guaranteedEntries)
+    ? row.guaranteedEntries
+    : [];
+  return {
+    id: normalizeText(row && row.lootTableID),
+    name: normalizeText(row && row.name),
+    minEntries: toInt(row && row.minEntries, 0),
+    maxEntries: toInt(row && row.maxEntries, 0),
+    entriesCount: entries.length,
+    guaranteedEntriesCount: guaranteedEntries.length,
+    allowDuplicates: row && row.allowDuplicates === true,
+    raw: row,
+  };
+}
+
+function normalizeNpcSpawnPool(row) {
+  const entries = Array.isArray(row && row.entries) ? row.entries : [];
+  return {
+    id: normalizeText(row && row.spawnPoolID),
+    name: normalizeText(row && row.name),
+    entityType: normalizeText(row && row.entityType),
+    entriesCount: entries.length,
+    totalWeight: entries.reduce((total, entry) => total + Math.max(0, Number(entry && entry.weight) || 0), 0),
+    sampleProfiles: entries
+      .slice(0, 5)
+      .map((entry) => normalizeText(entry && entry.profileID))
+      .filter(Boolean),
+    raw: row,
+  };
+}
+
+function normalizeNpcSpawnGroup(row) {
+  const entries = Array.isArray(row && row.entries) ? row.entries : [];
+  const memberCount = entries.reduce((total, entry) => {
+    const count = toInt(entry && entry.count, 0);
+    const minCount = toInt(entry && entry.minCount, 0);
+    const maxCount = toInt(entry && entry.maxCount, 0);
+    return total + Math.max(count, minCount, maxCount, 1);
+  }, 0);
+  return {
+    id: normalizeText(row && row.spawnGroupID),
+    name: normalizeText(row && row.name),
+    entityType: normalizeText(row && row.entityType),
+    entriesCount: entries.length,
+    memberCount,
+    sampleMembers: entries
+      .slice(0, 5)
+      .map((entry) => normalizeText(entry && (entry.profileID || entry.spawnPoolID)))
+      .filter(Boolean),
+    raw: row,
+  };
+}
+
 function addResourceType(target, itemTypesByID, typeID, kind) {
   const id = toInt(typeID, 0);
   if (!id) return;
@@ -440,11 +509,11 @@ function buildCatalog(dataDir = activeDataDir()) {
   const resourceTypes = buildResourceTypes(templates, itemTypesByID);
   const npc = {
     profiles: npcProfiles.map((profile) => normalizeNpcProfile(profile, itemTypesByID)),
-    loadouts: npcLoadouts.map((row) => ({ id: normalizeText(row && row.loadoutID), name: normalizeText(row && row.name), raw: row })),
+    loadouts: npcLoadouts.map((row) => normalizeNpcLoadout(row)),
     behaviorProfiles: npcBehaviorProfiles.map((row) => ({ id: normalizeText(row && row.behaviorProfileID), name: normalizeText(row && row.name), raw: row })),
-    lootTables: npcLootTables.map((row) => ({ id: normalizeText(row && row.lootTableID), name: normalizeText(row && row.name), raw: row })),
-    spawnPools: npcSpawnPools.map((row) => ({ id: normalizeText(row && row.spawnPoolID), name: normalizeText(row && row.name), raw: row })),
-    spawnGroups: npcSpawnGroups.map((row) => ({ id: normalizeText(row && row.spawnGroupID), name: normalizeText(row && row.name), raw: row })),
+    lootTables: npcLootTables.map((row) => normalizeNpcLootTable(row)),
+    spawnPools: npcSpawnPools.map((row) => normalizeNpcSpawnPool(row)),
+    spawnGroups: npcSpawnGroups.map((row) => normalizeNpcSpawnGroup(row)),
     spawnSites: npcSpawnSites.map((row) => ({ id: normalizeText(row && row.spawnSiteID), name: normalizeText(row && row.name), raw: row })),
     startupRules: npcStartupRules.map((row) => ({ id: normalizeText(row && row.startupRuleID), name: normalizeText(row && row.name), raw: row })),
   };
@@ -474,6 +543,8 @@ function buildCatalog(dataDir = activeDataDir()) {
     npcProfilesByID: new Map(npc.profiles.map((profile) => [profile.profileID, profile])),
     npcLoadoutsByID: new Map(npc.loadouts.map((row) => [row.id, row])),
     npcBehaviorProfilesByID: new Map(npc.behaviorProfiles.map((row) => [row.id, row])),
+    npcLootTablesByID: new Map(npc.lootTables.map((row) => [row.id, row])),
+    npcSpawnPoolsByID: new Map(npc.spawnPools.map((row) => [row.id, row])),
     npcSpawnGroupsByID: new Map(npc.spawnGroups.map((row) => [row.id, row])),
     summary: {
       systemCount: systems.length,
@@ -672,9 +743,17 @@ function listNpc(kind, query, limit) {
   const catalog = getCatalog();
   const key = normalizeText(kind || "profiles");
   const rows = catalog.npc[key] || catalog.npc.profiles;
-  const fields = key === "profiles"
-    ? ["profileID", "name", "shipTypeName", "entityType"]
-    : ["id", "name"];
+  const fieldsByKind = {
+    profiles: ["profileID", "name", "shipTypeName", "entityType", "loadoutID", "lootTableID"],
+    loadouts: ["id", "name"],
+    behaviorProfiles: ["id", "name"],
+    lootTables: ["id", "name"],
+    spawnPools: ["id", "name", "entityType", "sampleProfiles"],
+    spawnGroups: ["id", "name", "entityType", "sampleMembers"],
+    spawnSites: ["id", "name"],
+    startupRules: ["id", "name"],
+  };
+  const fields = fieldsByKind[key] || ["id", "name"];
   return searchRows(rows, query, fields, limit);
 }
 

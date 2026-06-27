@@ -13,23 +13,45 @@ function resolveEveRoot(candidate = process.env.EVEJS_ROOT || DEFAULT_EVEJS_ROOT
 }
 
 function getLiveDataDir(eveRoot = resolveEveRoot()) {
+  if (process.env.EVEJS_GAMESTORE_DATA_DIR) {
+    return path.resolve(process.env.EVEJS_GAMESTORE_DATA_DIR);
+  }
+
   if (process.env.EVEJS_NEWDB_DATA_DIR) {
     return path.resolve(process.env.EVEJS_NEWDB_DATA_DIR);
   }
 
-  const localDatabaseRoot = path.join(eveRoot, "_local", "newDatabase");
-  const localDataDir = path.join(localDatabaseRoot, "data");
+  const localGameStoreRoot = path.join(eveRoot, "_local", "gameStore");
+  const localGameStoreDataDir = path.join(localGameStoreRoot, "data");
   if (
-    fs.existsSync(path.join(localDatabaseRoot, "manifest.json")) ||
-    fs.existsSync(localDataDir)
+    fs.existsSync(path.join(localGameStoreRoot, "manifest.json")) ||
+    fs.existsSync(localGameStoreDataDir)
   ) {
-    return localDataDir;
+    return localGameStoreDataDir;
   }
 
-  return getSourceDataDir(eveRoot);
+  const sourceGameStoreDataDir = getSourceDataDir(eveRoot);
+  if (fs.existsSync(sourceGameStoreDataDir)) {
+    return sourceGameStoreDataDir;
+  }
+
+  const legacyDatabaseRoot = path.join(eveRoot, "_local", "newDatabase");
+  const legacyDataDir = path.join(legacyDatabaseRoot, "data");
+  if (
+    fs.existsSync(path.join(legacyDatabaseRoot, "manifest.json")) ||
+    fs.existsSync(legacyDataDir)
+  ) {
+    return legacyDataDir;
+  }
+
+  return path.join(eveRoot, "server", "src", "newDatabase", "data");
 }
 
 function getSourceDataDir(eveRoot = resolveEveRoot()) {
+  const gameStoreDataDir = path.join(eveRoot, "server", "src", "gameStore", "data");
+  if (fs.existsSync(gameStoreDataDir)) {
+    return gameStoreDataDir;
+  }
   return path.join(eveRoot, "server", "src", "newDatabase", "data");
 }
 

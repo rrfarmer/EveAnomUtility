@@ -11,8 +11,10 @@ const TARGET_VIEWPORT = { width: 1920, height: 1080 };
 const desktopViews = [
   ["builder", "builder-1920x1080.png"],
   ["systems", "systems-1920x1080.png"],
+  ["mission-security", "mission-security-1920x1080.png"],
   ["missions", "missions-1920x1080.png"],
   ["npcs", "npcs-1920x1080.png"],
+  ["loot", "loot-1920x1080.png"],
   ["pack", "pack-1920x1080.png"],
   ["research", "research-1920x1080.png"],
 ];
@@ -37,6 +39,17 @@ async function captureBuilderOverrides(page) {
   await page.locator("#overrideList").scrollIntoViewIfNeeded();
   await page.waitForTimeout(250);
   const filename = "builder-overrides-1920x1080.png";
+  await page.screenshot({ path: path.join(SCREENSHOT_DIR, filename) });
+  return health(page, filename);
+}
+
+async function captureLootProfileEditor(page) {
+  await page.locator('.nav-button[data-view="loot"]').click();
+  await page.locator("#lootProfileSearchInput").fill("generic_random_any");
+  await page.locator("#loadLootProfileButton").click();
+  await page.waitForFunction(() => /generic_random_any/.test(document.querySelector("#lootProfileList")?.textContent || ""));
+  await page.waitForTimeout(250);
+  const filename = "loot-profile-generic-random-any-1920x1080.png";
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, filename) });
   return health(page, filename);
 }
@@ -122,6 +135,27 @@ async function verifyMissionFilters(page) {
     text: document.querySelector("#missionResults")?.textContent || "",
   }));
   return { combat, courier };
+}
+
+async function verifySecurityMissionDraft(page) {
+  await page.locator('.nav-button[data-view="mission-security"]').click();
+  await page.locator("#securityMissionSearchInput").fill("2391");
+  await page.locator("#securityMissionSearchButton").click();
+  await page.waitForFunction(() => document.querySelectorAll("#securityMissionResults .data-row").length > 0);
+  await page.locator("#securityMissionResults .data-row", { hasText: "mission 2391" }).first().locator("button").click();
+  await page.waitForFunction(() => document.querySelector(".view.is-active")?.id === "view-builder");
+  await page.waitForFunction(() => /group_2_destroyer/.test(document.querySelector("#overlayPreview")?.textContent || ""));
+  const filename = "builder-security-the-score-1920x1080.png";
+  await page.screenshot({ path: path.join(SCREENSHOT_DIR, filename) });
+  return page.evaluate((screenshot) => ({
+    screenshot,
+    activeView: document.querySelector(".view.is-active")?.id || "",
+    title: document.querySelector("#titleInput")?.value || "",
+    templateID: document.querySelector("#templateIdInput")?.value || "",
+    layoutRows: document.querySelectorAll("#missionLayoutList .editor-row").length,
+    encounterRows: document.querySelectorAll("#encounterList .editor-row").length,
+    preview: document.querySelector("#overlayPreview")?.textContent || "",
+  }), filename);
 }
 
 async function verifyBuilderMissionTemplateFilters(page) {
@@ -220,9 +254,11 @@ async function run() {
   results.push(await captureBuilderMissionCategory(page));
   results.push(await captureBuilderResources(page));
   results.push(await captureBuilderOverrides(page));
+  results.push(await captureLootProfileEditor(page));
   const typeSwitchReset = await verifyTypeSwitchReset(page);
   const deletionControls = await verifyDeletionControls(page);
   const missionFilters = await verifyMissionFilters(page);
+  const securityMissionDraft = await verifySecurityMissionDraft(page);
   const builderMissionTemplateFilters = await verifyBuilderMissionTemplateFilters(page);
 
   await browser.close();
@@ -235,6 +271,7 @@ async function run() {
     typeSwitchReset,
     deletionControls,
     missionFilters,
+    securityMissionDraft,
     builderMissionTemplateFilters,
     consoleMessages,
     pageErrors,
@@ -273,19 +310,25 @@ async function run() {
     || (deletionControls.overlayRows > 0 && deletionControls.overlayDeleteButtons !== deletionControls.overlayRows);
   const missionFilterFailures = missionFilters.combat.rows < 1
     || missionFilters.combat.useButtons < 1
-    || !/Combat/i.test(missionFilters.combat.text)
+    || !/Security/i.test(missionFilters.combat.text)
     || missionFilters.courier.rows < 1
     || missionFilters.courier.haulingButtons < 1
     || !/Courier/i.test(missionFilters.courier.text);
   const builderMissionTemplateFilterFailures = builderMissionTemplateFilters.combat.category !== "combat"
     || builderMissionTemplateFilters.combat.optionCount < 2
-    || !/combat/i.test(builderMissionTemplateFilters.combat.meta)
+    || !/security/i.test(builderMissionTemplateFilters.combat.meta)
     || builderMissionTemplateFilters.courier.category !== "courier"
     || builderMissionTemplateFilters.courier.optionCount !== 1
     || !/courier/i.test(builderMissionTemplateFilters.courier.meta)
     || builderMissionTemplateFilters.courier.encounterRows !== 0;
-  if (consoleMessages.length || pageErrors.length || overflowFailures.length || iconFailures.length || templateSelectFailures.length || resourceSelectFailures.length || builderMissionCategoryFailures.length || builderMissionCategoryNonMissionFailures.length || typeSwitchResetFailures || deletionControlFailures || missionFilterFailures || builderMissionTemplateFilterFailures) {
-    console.error(JSON.stringify({ consoleMessages, pageErrors, overflowFailures, iconFailures, templateSelectFailures, resourceSelectFailures, builderMissionCategoryFailures, builderMissionCategoryNonMissionFailures, typeSwitchReset, deletionControls, missionFilters, builderMissionTemplateFilters }, null, 2));
+  const securityMissionDraftFailures = securityMissionDraft.activeView !== "view-builder"
+    || !/The Score/i.test(securityMissionDraft.title)
+    || !/the-score-l1-guristas/.test(securityMissionDraft.templateID)
+    || securityMissionDraft.layoutRows < 3
+    || securityMissionDraft.encounterRows < 4
+    || !/group_2_destroyer/.test(securityMissionDraft.preview);
+  if (consoleMessages.length || pageErrors.length || overflowFailures.length || iconFailures.length || templateSelectFailures.length || resourceSelectFailures.length || builderMissionCategoryFailures.length || builderMissionCategoryNonMissionFailures.length || typeSwitchResetFailures || deletionControlFailures || missionFilterFailures || securityMissionDraftFailures || builderMissionTemplateFilterFailures) {
+    console.error(JSON.stringify({ consoleMessages, pageErrors, overflowFailures, iconFailures, templateSelectFailures, resourceSelectFailures, builderMissionCategoryFailures, builderMissionCategoryNonMissionFailures, typeSwitchReset, deletionControls, missionFilters, securityMissionDraft, builderMissionTemplateFilters }, null, 2));
     process.exit(1);
   }
 

@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/server.js && node --check src/lib/catalog.js && node --check src/lib/dataStore.js && node --check src/lib/overlayStore.js && node --check src/lib/templatePack.js && node --check src/lib/validator.js && node --check public/app.js && node --check scripts/smoke-test.js && node --check scripts/visual-check.js",
+    "check": "node --check src/server.js && node --check src/lib/catalog.js && node --check src/lib/dataStore.js && node --check src/lib/missionSecurity.js && node --check src/lib/npcAuthoringStore.js && node --check src/lib/overlayStore.js && node --check src/lib/templatePack.js && node --check src/lib/validator.js && node --check public/app.js && node --check scripts/smoke-test.js && node --check scripts/visual-check.js",
     "smoke": "node scripts/smoke-test.js",
     "visual-check": "node scripts/visual-check.js"
   },
