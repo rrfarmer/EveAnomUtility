@@ -88,6 +88,12 @@ Hard boundary: do not modify EVE client data or require client-side edits. Serve
 
 ## Current Build
 
+- 2026-06-27 UI overhaul: the app is now dark-mode only (tokenized palette in `public/styles.css`). Navigation is grouped into Author (Site Builder, Mission Designer), Library (Systems, NPCs, Loot Profiles), and Output (Template Pack, Research). The standalone Security tab was removed.
+- Site Builder is now a stepped flow: `Define -> Placement -> Contents -> Review & Save`. The Contents step only shows the editors relevant to the selected content family (`CONTENTS_SECTIONS` in `public/app.js`).
+- Mission authoring moved out of the Builder into a dedicated Mission Designer (`view-missions`): a mission catalog browser plus an authoring panel. It saves through the same `/api/overlays` and `/api/template-pack` backend. Mission overlays loaded from the Saved Drafts list route back into the Mission Designer.
+- 2026-06-27 Mission Designer spawn overhaul: NPC spawns are authored as a **Pockets -> Groups -> NPC lines** outline (`renderMissionPockets`/`renderGroupCard`/`renderNpcLine` in `public/app.js`). The flat `encounters[]` schema is unchanged; the UI groups it by `(roomKey, sourceGroup)`. An **Add NPC** search picker resolves profiles/pools by name (ship/faction/bounty) and stores `profileID`/`spawnPoolID`. Completion is derived from per-group **Objective** toggles (`encounter_group_cleared` + `encounterKeys`). An overview fact bar reads `missionSecurity` (faction/level/objective/EWAR/damage). New endpoint `GET /api/npcs/resolve?ids=` (`src/lib/catalog.js` `resolveNpc`) powers name resolution.
+- `src/lib/missionSecurity.js` `buildTheScoreGuristasDraft` models The Score (Guristas L1) per EveJS `client-dungeon:921`: one combat pocket (`room:entry`, "Entry Pocket") reached through the warp-in **acceleration gate** (pulled from the template's `siteSceneProfile.gateProfiles` via `firstBaseGate`), `profileID` spawns triggered `on_room_active`, Group 2 as the objective, plus `damageProfile`/`ewar`/`recommendedShip` overview fields. The gate is real client data, not a synthetic addition — do not drop it.
+- The Builder `mission` content family and the in-Builder Mission Rooms section were removed.
 - Local app: `http://127.0.0.1:4732`
 - Package root: `D:\EveAnomUtility`
 - Icon system: local `lucide` package served from `/vendor/lucide.js`; no CDN dependency.
@@ -108,17 +114,18 @@ Hard boundary: do not modify EVE client data or require client-side edits. Serve
 - Generated pack: `D:\EveAnomUtility\workspace\overlays\generated-template-pack.json`
 - Generated template rows now mirror current `dungeonAuthority` records enough for an import/review step: `resourceComposition` is a top-level summary, `populationHints.resources` is an `{ oreTypeIDs, gasTypeIDs, iceTypeIDs }` object, and detailed utility-only fields are contained under `adminMetadata`.
 - Visual report: `D:\EveAnomUtility\workspace\screenshots\visual-report.json`
-- Screenshot set:
-  - `D:\EveAnomUtility\workspace\screenshots\builder-1920x1080.png`
-  - `D:\EveAnomUtility\workspace\screenshots\builder-mission-category-1920x1080.png`
-  - `D:\EveAnomUtility\workspace\screenshots\builder-resources-1920x1080.png`
-  - `D:\EveAnomUtility\workspace\screenshots\builder-overrides-1920x1080.png`
-  - `D:\EveAnomUtility\workspace\screenshots\builder-delete-controls-1920x1080.png`
-  - `D:\EveAnomUtility\workspace\screenshots\systems-1920x1080.png`
-  - `D:\EveAnomUtility\workspace\screenshots\missions-1920x1080.png`
-  - `D:\EveAnomUtility\workspace\screenshots\npcs-1920x1080.png`
-  - `D:\EveAnomUtility\workspace\screenshots\pack-1920x1080.png`
-  - `D:\EveAnomUtility\workspace\screenshots\research-1920x1080.png`
+- Screenshot set (post-2026-06-27 dark-mode redesign):
+  - `workspace\screenshots\builder-1920x1080.png`
+  - `workspace\screenshots\builder-resources-1920x1080.png`
+  - `workspace\screenshots\builder-contents-1920x1080.png`
+  - `workspace\screenshots\missions-1920x1080.png`
+  - `workspace\screenshots\mission-designer-the-score-1920x1080.png`
+  - `workspace\screenshots\systems-1920x1080.png`
+  - `workspace\screenshots\npcs-1920x1080.png`
+  - `workspace\screenshots\loot-1920x1080.png`
+  - `workspace\screenshots\loot-profile-generic-random-any-1920x1080.png`
+  - `workspace\screenshots\pack-1920x1080.png`
+  - `workspace\screenshots\research-1920x1080.png`
 
 ## Verification
 

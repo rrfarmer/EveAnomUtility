@@ -18,6 +18,7 @@ const {
   listResourceTypes,
   listSystems,
   listTemplates,
+  resolveNpc,
 } = require("./lib/catalog");
 const {
   deleteOverlay,
@@ -217,6 +218,15 @@ async function routeApi(req, res, url) {
         url.searchParams.get("limit"),
       ),
     });
+    return true;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/npcs/resolve") {
+    const ids = (url.searchParams.get("ids") || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    sendJson(res, 200, { success: true, npcs: resolveNpc(ids) });
     return true;
   }
 

@@ -768,6 +768,55 @@ function getRawNpc(kind, id) {
   return row ? clone(row.raw || row) : null;
 }
 
+// Resolve NPC source IDs (profile / spawn pool / spawn group) to display info for the editor.
+function resolveNpc(ids) {
+  const catalog = getCatalog();
+  const list = Array.isArray(ids) ? ids : [ids];
+  const out = [];
+  const seen = new Set();
+  list.forEach((rawID) => {
+    const id = normalizeText(rawID);
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    const profile = catalog.npcProfilesByID.get(id);
+    if (profile) {
+      out.push({
+        id,
+        kind: "profile",
+        name: profile.name || id,
+        shipTypeName: profile.shipTypeName || "",
+        presentationTypeName: profile.presentationTypeName || "",
+        bounty: profile.bounty || 0,
+      });
+      return;
+    }
+    const pool = catalog.npcSpawnPoolsByID.get(id);
+    if (pool) {
+      out.push({
+        id,
+        kind: "pool",
+        name: pool.name || id,
+        shipTypeName: "",
+        sampleProfiles: Array.isArray(pool.sampleProfiles) ? pool.sampleProfiles : [],
+      });
+      return;
+    }
+    const group = catalog.npcSpawnGroupsByID.get(id);
+    if (group) {
+      out.push({
+        id,
+        kind: "group",
+        name: group.name || id,
+        shipTypeName: "",
+        sampleMembers: Array.isArray(group.sampleMembers) ? group.sampleMembers : [],
+      });
+      return;
+    }
+    out.push({ id, kind: "unknown", name: id, shipTypeName: "" });
+  });
+  return out;
+}
+
 function resolveNames(payload = {}) {
   const catalog = getCatalog();
   const spawnScope = payload.spawnScope && typeof payload.spawnScope === "object"
@@ -809,4 +858,5 @@ module.exports = {
   listSystems,
   listTemplates,
   resolveNames,
+  resolveNpc,
 };

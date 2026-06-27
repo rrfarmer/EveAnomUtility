@@ -99,9 +99,10 @@ async function main() {
     const parsedSecurityDraft = JSON.parse(securityDraft.body);
     if (
       !parsedSecurityDraft.draft ||
-      parsedSecurityDraft.draft.rooms.length !== 2 ||
+      parsedSecurityDraft.draft.rooms.length !== 1 ||
       parsedSecurityDraft.draft.gates.length !== 1 ||
       parsedSecurityDraft.draft.encounters.length < 4 ||
+      parsedSecurityDraft.draft.encounters.some((encounter) => !encounter.profileID) ||
       parsedSecurityDraft.draft.completion.encounterKeys.length !== 2
     ) {
       throw new Error(`The Score Security draft is incomplete: ${securityDraft.body}`);
@@ -132,7 +133,7 @@ async function main() {
     const generatedSecurityTemplate = parsedSecurityPack.pack.templates.find((template) => template.templateID === securityOverlay.templateID);
     if (
       !generatedSecurityTemplate ||
-      generatedSecurityTemplate.siteSceneProfile.roomProfiles.length !== 2 ||
+      generatedSecurityTemplate.siteSceneProfile.roomProfiles.length !== 1 ||
       generatedSecurityTemplate.siteSceneProfile.gateProfiles.length !== 1 ||
       generatedSecurityTemplate.populationHints.completion.encounterKeys.length !== 2
     ) {

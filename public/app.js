@@ -24,14 +24,6 @@ const CONTENT_FAMILIES = [
     defaultDelivery: "signature",
   },
   {
-    id: "mission",
-    label: "Mission",
-    icon: "briefcase",
-    description: "Private agent mission pockets and generated mission combat.",
-    deliveries: ["mission_private"],
-    defaultDelivery: "mission_private",
-  },
-  {
     id: "wormhole",
     label: "Wormhole",
     icon: "orbit",
@@ -77,6 +69,7 @@ const DELIVERY_OPTIONS = {
 
 const state = {
   view: "builder",
+  builderStep: "define",
   contentFamily: "combat",
   delivery: "anomaly",
   kind: "combat_anomaly",
@@ -333,20 +326,55 @@ function setScopeMode(scopeMode) {
   updatePreview();
 }
 
+const VIEW_META = {
+  builder: { title: "Site Builder", eyebrow: "Server-side template authoring" },
+  missions: { title: "Mission Designer", eyebrow: "Agent mission combat authoring" },
+  systems: { title: "Systems", eyebrow: "Solar system reference" },
+  npcs: { title: "NPCs", eyebrow: "Server-side NPC catalog" },
+  loot: { title: "Loot Profiles", eyebrow: "Reusable NPC loot tables" },
+  pack: { title: "Template Pack", eyebrow: "Generated output for EveJS" },
+  research: { title: "Research", eyebrow: "Content customization notes" },
+};
+
 function setView(view) {
   state.view = view;
   $$(".nav-button").forEach((button) => button.classList.toggle("is-active", button.dataset.view === view));
   $$(".view").forEach((panel) => panel.classList.toggle("is-active", panel.id === `view-${view}`));
-  $("#viewTitle").textContent = {
-    builder: "Builder",
-    systems: "Systems",
-    "mission-security": "Missions: Security",
-    missions: "Missions",
-    npcs: "NPCs",
-    loot: "Loot Table Profiles",
-    pack: "Template Pack",
-    research: "Research",
-  }[view] || "Builder";
+  const meta = VIEW_META[view] || VIEW_META.builder;
+  $("#viewTitle").textContent = meta.title;
+  $("#viewEyebrow").textContent = meta.eyebrow;
+}
+
+const BUILDER_STEPS = ["define", "placement", "contents", "review"];
+
+// Which Contents sections are relevant per content family.
+const CONTENTS_SECTIONS = {
+  encounters: ["combat", "special", "wormhole"],
+  resources: ["resource"],
+  npcOverrides: ["combat", "resource", "wormhole", "special", "static_world", "npc_presence"],
+  lootTables: ["combat", "hacking", "wormhole", "special", "npc_presence"],
+};
+
+function setBuilderStep(step) {
+  state.builderStep = BUILDER_STEPS.includes(step) ? step : "define";
+  $$("#builderSteps .step-button").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.step === state.builderStep);
+  });
+  $$("#view-builder .builder-step").forEach((panel) => {
+    panel.classList.toggle("is-active", panel.dataset.stepPanel === state.builderStep);
+  });
+}
+
+function syncContentsVisibility() {
+  let visible = 0;
+  $$('#view-builder [data-section]').forEach((block) => {
+    const families = CONTENTS_SECTIONS[block.dataset.section] || [];
+    const show = families.includes(state.contentFamily);
+    block.hidden = !show;
+    if (show) visible += 1;
+  });
+  const empty = $("#contentsEmpty");
+  if (empty) empty.hidden = visible > 0;
 }
 
 function renderFamilyControl() {
@@ -385,22 +413,13 @@ function syncContentControls() {
     select.appendChild(option);
   });
   select.value = state.delivery;
-  const missionCategoryField = $("#missionCategoryField");
-  const builderMissionTypeSelect = $("#builderMissionTypeSelect");
-  if (missionCategoryField && builderMissionTypeSelect) {
-    const isMission = state.contentFamily === "mission";
-    missionCategoryField.hidden = !isMission;
-    missionCategoryField.classList.toggle("is-visible", isMission);
-    missionCategoryField.setAttribute("aria-hidden", isMission ? "false" : "true");
-    builderMissionTypeSelect.value = state.missionType || "combat";
-  }
   $("#contentSummary").innerHTML = `
     <span>${icon(family.icon)}${family.label}</span>
     <span>${icon(DELIVERY_OPTIONS[state.delivery]?.icon || "circle")} ${deliveryLabel(state.delivery)}</span>
-    ${state.contentFamily === "mission" ? `<span>${icon("briefcase")} ${missionTypeLabel(state.missionType)}</span>` : ""}
     <span>${icon("eye")} Scanner: ${scannerVisibility()}</span>
   `;
   hydrateIcons($("#contentSummary"));
+  syncContentsVisibility();
 }
 
 function setContentFamily(contentFamily, options = {}) {
@@ -447,26 +466,6 @@ function setDelivery(delivery, options = {}) {
   renderAll();
 }
 
-function setMissionType(missionType, options = {}) {
-  const allowed = new Set(["combat", "courier", "mining", "trade", "talk_to_agent", "agent_interaction", "other"]);
-  const next = allowed.has(missionType) ? missionType : "combat";
-  const previous = state.missionType;
-  state.missionType = next;
-  if (options.resetDraft !== false && state.contentFamily === "mission" && previous !== state.missionType) {
-    resetDraftFields();
-  }
-  if (options.preserveTemplate !== true && previous !== state.missionType) {
-    clearSelectedTemplate();
-    $("#templateSearchInput").value = "";
-  }
-  syncContentControls();
-  void loadTemplateOptions();
-  if (options.applyDefaults !== false) {
-    applyDefaultsForCurrentContent();
-  }
-  renderAll();
-}
-
 function setKind(kind) {
   state.contentFamily = contentFamilyFromKind(kind);
   state.delivery = deliveryFromKind(kind);
@@ -483,7 +482,7 @@ function applyDefaultsForCurrentContent() {
   if (state.contentFamily === "resource" && state.resources.length === 0) {
     state.resources.push({ ...defaultResource(), quantity: 250000, radiusMeters: 45000 });
   }
-  if ((state.contentFamily === "combat" || (state.contentFamily === "mission" && state.missionType === "combat")) && state.encounters.length === 0) {
+  if (state.contentFamily === "combat" && state.encounters.length === 0) {
     state.encounters.push({ profileID: "generic_hostile", count: 3, trigger: "on_load", targetPolicy: "nearest_player" });
   }
 }
@@ -948,61 +947,10 @@ function renderSelectedSystem() {
 }
 
 function renderEditorRows() {
-  renderMissionLayout();
   renderEncounters();
   renderResources();
   renderOverrides();
   renderLootTables();
-}
-
-function renderMissionLayout() {
-  const list = $("#missionLayoutList");
-  if (!list) return;
-  list.innerHTML = "";
-  if (state.contentFamily !== "mission") {
-    list.closest(".mission-layout-section").hidden = true;
-    return;
-  }
-  list.closest(".mission-layout-section").hidden = false;
-  state.rooms.forEach((room, index) => {
-    const row = document.createElement("div");
-    row.className = "editor-row";
-    row.innerHTML = `
-      <div class="editor-row-grid">
-        <label class="wide"><span>Room Key</span><input data-field="roomKey"></label>
-        <label class="wide"><span>Label</span><input data-field="label"></label>
-        <label><span>Role</span><input data-field="role"></label>
-        <label><span>Initial State</span><select data-field="initialState"><option value="active">Active</option><option value="pending">Pending</option><option value="locked">Locked</option></select></label>
-        <button class="remove-row">${iconText("trash-2", "Remove")}</button>
-      </div>
-    `;
-    bindRow(row, room, () => {
-      state.rooms.splice(index, 1);
-      renderAll();
-    });
-    list.appendChild(row);
-    hydrateIcons(row);
-  });
-  state.gates.forEach((gate, index) => {
-    const row = document.createElement("div");
-    row.className = "editor-row";
-    row.innerHTML = `
-      <div class="editor-row-grid">
-        <label class="wide"><span>Gate Key</span><input data-field="gateKey"></label>
-        <label class="wide"><span>Destination Room</span><input data-field="destinationRoomKey"></label>
-        <label><span>Type ID</span><input data-field="typeID" data-number="true" type="number"></label>
-        <label><span>From Object</span><input data-field="fromObjectID" data-number="true" type="number"></label>
-        <label><span>Initial State</span><select data-field="initialState"><option value="unlocked">Unlocked</option><option value="locked">Locked</option><option value="used">Used</option></select></label>
-        <button class="remove-row">${iconText("trash-2", "Remove")}</button>
-      </div>
-    `;
-    bindRow(row, gate, () => {
-      state.gates.splice(index, 1);
-      renderAll();
-    });
-    list.appendChild(row);
-    hydrateIcons(row);
-  });
 }
 
 function lookupNpcRow(collection, id) {
@@ -1039,10 +987,10 @@ function encounterChipHTML(encounter) {
   return `${icon("circle-alert")}<div><strong>No NPC source selected</strong><span>Choose a profile, spawn pool, spawn group, or query before saving.</span></div>`;
 }
 
-function renderEncounters() {
-  const list = $("#encounterList");
+function renderEncounters(list = $("#encounterList"), encounters = state.encounters, onChange = renderAll) {
+  if (!list) return;
   list.innerHTML = "";
-  state.encounters.forEach((encounter, index) => {
+  encounters.forEach((encounter, index) => {
     const row = document.createElement("div");
     row.className = "editor-row";
     row.innerHTML = `
@@ -1060,8 +1008,8 @@ function renderEncounters() {
       </div>
     `;
     bindRow(row, encounter, () => {
-      state.encounters.splice(index, 1);
-      renderAll();
+      encounters.splice(index, 1);
+      onChange();
     });
     const chip = row.querySelector("[data-encounter-chip]");
     row.querySelectorAll('[data-field="profileID"], [data-field="spawnPoolID"], [data-field="spawnGroupID"], [data-field="spawnQuery"]').forEach((input) => {
@@ -1158,10 +1106,10 @@ function lootTableChipHTML(lootTable) {
   return `${icon(existing ? "package-check" : "package-open")}<div><strong>${escapeHTML(lootTable.name || lootTable.lootTableID || "Unnamed loot table")}</strong><span>${smallMeta([source, `${guaranteedEntries.length} guaranteed`, `${entries.length} weighted`, `rolls ${lootTable.minEntries || 0}-${lootTable.maxEntries || 0}`])}</span></div>`;
 }
 
-function renderLootTables() {
-  const list = $("#lootTableList");
+function renderLootTables(list = $("#lootTableList"), lootTables = state.lootTables, onChange = renderAll) {
+  if (!list) return;
   list.innerHTML = "";
-  state.lootTables.forEach((lootTable, index) => {
+  lootTables.forEach((lootTable, index) => {
     const row = document.createElement("div");
     row.className = "editor-row";
     row.innerHTML = `
@@ -1181,8 +1129,8 @@ function renderLootTables() {
       </div>
     `;
     bindRow(row, lootTable, () => {
-      state.lootTables.splice(index, 1);
-      renderAll();
+      lootTables.splice(index, 1);
+      onChange();
     });
     const chip = row.querySelector("[data-loot-table-chip]");
     row.querySelectorAll("[data-field]").forEach((input) => {
@@ -1542,6 +1490,11 @@ async function deleteSelectedTemplate() {
 }
 
 async function loadOverlayIntoForm(overlay) {
+  const family = overlay.contentFamily || contentFamilyFromKind(overlay.kind);
+  if (family === "mission") {
+    await loadMissionOverlay(overlay);
+    return;
+  }
   state.loadedOverlayId = overlay.id;
   state.contentFamily = overlay.contentFamily || contentFamilyFromKind(overlay.kind);
   state.delivery = overlay.delivery || deliveryFromKind(overlay.kind);
@@ -1867,91 +1820,670 @@ function missionObjectiveSummary(mission) {
   return "";
 }
 
-async function loadMissionIntoBuilder(mission) {
-  setView("builder");
-  state.contentFamily = "mission";
-  state.delivery = "mission_private";
-  state.missionType = mission.missionType || "combat";
-  resetDraftFields();
-  syncContentControls();
-  $("#titleInput").value = mission.name || `Mission ${mission.missionID}`;
-  $("#templateIdInput").value = mission.linkedTemplateID || `mission:${mission.missionID}`;
-  if (mission.linkedTemplateID) {
-    const data = await api(`/api/templates/${encodeURIComponent(mission.linkedTemplateID)}`);
-    state.baseTemplate = data.template;
-    state.selectedTemplateRaw = data.template.raw || null;
+// ===== Mission Designer =====
+
+const missionState = {
+  active: false,
+  loadedOverlayId: "",
+  missionID: 0,
+  missionName: "",
+  missionType: "combat",
+  baseTemplate: null,
+  selectedTemplateRaw: null,
+  rooms: [],
+  gates: [],
+  encounters: [],
+  lootTables: [],
+  completion: null,
+  missionSecurity: null,
+  sourceLinks: [],
+};
+
+function blankMissionState() {
+  missionState.active = true;
+  missionState.loadedOverlayId = "";
+  missionState.missionID = 0;
+  missionState.missionName = "";
+  missionState.missionType = "combat";
+  missionState.baseTemplate = null;
+  missionState.selectedTemplateRaw = null;
+  missionState.rooms = [];
+  missionState.gates = [];
+  missionState.encounters = [];
+  missionState.lootTables = [];
+  missionState.completion = null;
+  missionState.missionSecurity = null;
+  missionState.sourceLinks = [];
+}
+
+function missionOverlayFromForm() {
+  return {
+    id: missionState.loadedOverlayId || undefined,
+    title: $("#missionTitleInput").value.trim(),
+    templateID: $("#missionTemplateIdInput").value.trim(),
+    contentFamily: "mission",
+    delivery: "mission_private",
+    kind: "mission_combat",
+    missionType: $("#missionCategorySelect").value || "combat",
+    status: $("#missionStatusInput").value,
+    baseTemplateID: missionState.baseTemplate ? missionState.baseTemplate.templateID : "",
+    spawnScope: {
+      mode: "any_eligible",
+      securityBands: ["highsec", "lowsec", "nullsec", "wormhole"],
+      maxConcurrentPerSystem: 1,
+      weight: 1,
+      respawnMinutes: 60,
+      slotCount: 1,
+      solarSystemID: 0,
+      stargateID: 0,
+    },
+    solarSystemID: 0,
+    placement: { anchorKind: "system" },
+    scanner: { visibility: "private_mission", signalStrength: null },
+    rooms: missionState.rooms,
+    gates: missionState.gates,
+    encounters: missionState.encounters,
+    resources: [],
+    npcOverrides: [],
+    lootTables: missionState.lootTables,
+    completion: deriveMissionCompletion(),
+    missionSecurity: missionState.missionSecurity,
+    sourceLinks: missionState.sourceLinks,
+    notes: $("#missionNotesInput").value.trim(),
+  };
+}
+
+// --- NPC name resolution (id -> {name, ship, ...}), cached client-side ---
+const npcCache = new Map();
+
+function npcSourceId(encounter) {
+  return String(
+    (encounter && (encounter.profileID || encounter.spawnPoolID || encounter.spawnGroupID || encounter.spawnQuery)) || "",
+  ).trim();
+}
+
+function npcSourceIcon(encounter) {
+  if (encounter && encounter.spawnPoolID) return "shuffle";
+  if (encounter && encounter.spawnGroupID) return "users";
+  if (encounter && encounter.spawnQuery && !encounter.profileID) return "search-code";
+  return "crosshair";
+}
+
+async function resolveNpcIds(ids) {
+  const missing = [...new Set((ids || []).filter((id) => id && !npcCache.has(id)))];
+  if (!missing.length) return;
+  try {
+    const data = await api(`/api/npcs/resolve?ids=${encodeURIComponent(missing.join(","))}`);
+    (data.npcs || []).forEach((npc) => npcCache.set(npc.id, npc));
+  } catch (_error) {
+    /* leave unresolved ids to render as raw id */
   }
-  await loadTemplateOptions();
-  applyDefaultsForCurrentContent();
-  renderAll();
-  showNotice(`Loaded mission ${mission.missionID} as mission-combat content.`);
 }
 
-async function loadSecurityMissionDraft(mission) {
-  const data = await api(`/api/mission-security/draft?missionID=${encodeURIComponent(mission.missionID)}`);
-  const draft = data.draft;
-  setView("builder");
-  state.contentFamily = "mission";
-  state.delivery = "mission_private";
-  state.missionType = "combat";
-  resetDraftFields();
-  state.rooms = Array.isArray(draft.rooms) ? structuredClone(draft.rooms) : [];
-  state.gates = Array.isArray(draft.gates) ? structuredClone(draft.gates) : [];
-  state.encounters = Array.isArray(draft.encounters) ? structuredClone(draft.encounters) : [];
-  state.completion = draft.completion && typeof draft.completion === "object" ? structuredClone(draft.completion) : null;
-  state.missionSecurity = draft.missionSecurity && typeof draft.missionSecurity === "object" ? structuredClone(draft.missionSecurity) : null;
-  state.sourceLinks = Array.isArray(draft.sourceLinks) ? structuredClone(draft.sourceLinks) : [];
-  state.baseTemplate = data.baseTemplate || null;
-  state.selectedTemplateRaw = state.baseTemplate && state.baseTemplate.raw ? state.baseTemplate.raw : null;
-  syncContentControls();
-  $("#titleInput").value = draft.title || mission.name || `Mission ${mission.missionID}`;
-  $("#templateIdInput").value = draft.templateID || `admin:mission-security:${mission.missionID}`;
-  $("#statusInput").value = draft.status || "draft";
-  $("#templateSearchInput").value = draft.baseTemplateID || mission.linkedTemplateID || "";
-  $("#notesInput").value = draft.notes || "";
-  await loadTemplateOptions({ selectedTemplateID: draft.baseTemplateID || mission.linkedTemplateID || "", q: "" });
-  renderAll();
-  showNotice(`Loaded Security draft for mission ${mission.missionID}.`);
+function npcDisplay(id) {
+  const npc = npcCache.get(id);
+  if (!npc) return { name: id, meta: "resolving..." };
+  if (npc.kind === "profile") {
+    return { name: npc.name, meta: smallMeta([npc.shipTypeName, npc.bounty ? `${Number(npc.bounty).toLocaleString()} ISK` : ""]) };
+  }
+  if (npc.kind === "pool") {
+    return { name: npc.name, meta: smallMeta(["faction pool", `${(npc.sampleProfiles || []).length} ship types`]) };
+  }
+  if (npc.kind === "group") {
+    return { name: npc.name, meta: "spawn group" };
+  }
+  return { name: npc.name || id, meta: "unresolved id" };
 }
 
-async function searchSecurityMissions() {
-  const q = encodeURIComponent($("#securityMissionSearchInput").value.trim());
-  const data = await api(`/api/missions?missionType=combat&q=${q}&limit=96`);
-  const grid = $("#securityMissionResults");
-  grid.innerHTML = "";
-  data.missions.forEach((mission) => {
-    const row = document.createElement("div");
-    row.className = "data-row";
-    row.innerHTML = `
-      <div>
-        <div class="item-title"></div>
-        <div class="item-meta"></div>
-      </div>
-      <button class="secondary"></button>
-    `;
-    row.querySelector(".item-title").textContent = mission.name || `Mission ${mission.missionID}`;
-    row.querySelector(".item-meta").textContent = smallMeta([
-      `mission ${mission.missionID}`,
-      missionObjectiveSummary(mission),
-      mission.contentTemplate,
-      mission.linkedTemplateID,
-    ]);
-    const button = row.querySelector("button");
-    if (mission.linkedTemplateID) {
-      button.innerHTML = iconText("file-plus-2", "Author");
-      button.addEventListener("click", () => loadSecurityMissionDraft(mission));
-    } else {
-      button.innerHTML = iconText("info", "No Site");
-      button.disabled = true;
+function genEncounterKey() {
+  return `enc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function ensureEncounterKeys() {
+  missionState.encounters.forEach((encounter) => {
+    if (!encounter.key) encounter.key = genEncounterKey();
+  });
+}
+
+// Group the flat encounter list into displayable groups keyed by (room, sourceGroup).
+function missionGroups() {
+  const order = [];
+  const byID = new Map();
+  const fallbackRoom = (missionState.rooms[0] && missionState.rooms[0].roomKey) || "room:combat";
+  missionState.encounters.forEach((encounter) => {
+    const roomKey = encounter.roomKey || fallbackRoom;
+    const name = encounter.sourceGroup || encounter.label || encounter.key || "Group";
+    const gid = `${roomKey}::${name}`;
+    if (!byID.has(gid)) {
+      const group = { gid, roomKey, name, encounters: [] };
+      byID.set(gid, group);
+      order.push(group);
     }
-    grid.appendChild(row);
+    byID.get(gid).encounters.push(encounter);
+  });
+  return order;
+}
+
+function groupIsObjective(group) {
+  return group.encounters.some((encounter) => encounter.objective === true);
+}
+
+function nextGroupName(roomKey) {
+  const used = new Set(missionState.encounters.filter((e) => (e.roomKey || "") === roomKey).map((e) => e.sourceGroup));
+  let index = 1;
+  while (used.has(`Group ${index}`)) index += 1;
+  return `Group ${index}`;
+}
+
+function objectiveGroupNames() {
+  return [...new Set(missionState.encounters.filter((e) => e.objective).map((e) => e.sourceGroup).filter(Boolean))];
+}
+
+function deriveMissionCompletion() {
+  const objectiveKeys = missionState.encounters.filter((e) => e.objective && e.key).map((e) => e.key);
+  if (objectiveKeys.length) {
+    return { mode: "encounter_group_cleared", encounterKeys: objectiveKeys, despawnDelaySeconds: 0 };
+  }
+  return { mode: "encounters_cleared", despawnDelaySeconds: 0 };
+}
+
+function triggerOptionsHTML(selected) {
+  const options = [
+    ["on_load", "On warp-in"],
+    ["on_room_active", "When pocket entered"],
+    ["wave_cleared", "After previous group"],
+    ["timer", "On timer"],
+  ];
+  return options.map(([value, label]) => `<option value="${value}"${value === (selected || "on_load") ? " selected" : ""}>${label}</option>`).join("");
+}
+
+function roleOptionsHTML(selected) {
+  const options = [
+    ["combat", "Combat pocket"],
+    ["gate_only", "Gate-only entry"],
+    ["open", "Open pocket"],
+    ["entry", "Entry pocket"],
+  ];
+  return options.map(([value, label]) => `<option value="${value}"${value === (selected || "combat") ? " selected" : ""}>${label}</option>`).join("");
+}
+
+function renderMissionOverview() {
+  const host = $("#missionOverview");
+  if (!host) return;
+  const sec = missionState.missionSecurity || {};
+  const facts = [`${icon("briefcase")} ${missionTypeLabel($("#missionCategorySelect").value)}`];
+  if (missionState.missionID) facts.push(`${icon("hash")} mission ${missionState.missionID}`);
+  if (sec.faction) facts.push(`${icon("flag")} ${escapeHTML(sec.faction)}`);
+  if (sec.level) facts.push(`${icon("bar-chart-3")} Level ${escapeHTML(String(sec.level))}`);
+  facts.push(`${icon("door-open")} ${missionState.rooms.length} pocket${missionState.rooms.length === 1 ? "" : "s"}`);
+  facts.push(`${icon("radar")} ${missionState.encounters.length} NPC line${missionState.encounters.length === 1 ? "" : "s"}`);
+  if (sec.damageProfile) facts.push(`${icon("zap")} ${escapeHTML(sec.damageProfile)}`);
+  if (sec.ewar) facts.push(`${icon("radio")} ${escapeHTML(sec.ewar)}`);
+  if (sec.recommendedShip) facts.push(`${icon("ship")} ${escapeHTML(sec.recommendedShip)}`);
+  const objective = sec.objectiveSummary
+    ? `<div class="overview-objective">${icon("target")}<span>${escapeHTML(sec.objectiveSummary)}</span></div>`
+    : "";
+  const source = sec.sourceUrl
+    ? `<a class="overview-source" href="${escapeHTML(sec.sourceUrl)}" target="_blank" rel="noreferrer">${iconText("external-link", sec.sourceName || "Source")}</a>`
+    : "";
+  host.innerHTML = `<div class="fact-row">${facts.map((fact) => `<span>${fact}</span>`).join("")}</div>${objective}${source}`;
+  hydrateIcons(host);
+}
+
+function renderMissionCompletionSummary() {
+  const host = $("#missionCompletionSummary");
+  if (!host) return;
+  const names = objectiveGroupNames();
+  host.innerHTML = names.length
+    ? `${icon("flag")}<span>Mission completes when <strong>${names.map(escapeHTML).join(", ")}</strong> ${names.length > 1 ? "are" : "is"} destroyed.</span>`
+    : `${icon("flag")}<span>Mission completes when <strong>all hostiles</strong> are cleared.</span>`;
+  hydrateIcons(host);
+}
+
+function setEncounterNpc(encounter, choice) {
+  encounter.profileID = choice.kind === "profile" ? choice.id : "";
+  encounter.spawnPoolID = choice.kind === "pool" ? choice.id : "";
+  encounter.spawnGroupID = "";
+  encounter.spawnQuery = "";
+  npcCache.set(choice.id, {
+    id: choice.id,
+    kind: choice.kind,
+    name: choice.name,
+    shipTypeName: choice.shipTypeName || "",
+    bounty: choice.bounty || 0,
+    sampleProfiles: choice.sampleProfiles || [],
+  });
+  missionState.pickerKey = "";
+  renderMission();
+}
+
+async function runNpcPickerSearch(encounter, row) {
+  const query = row.querySelector(".npc-search").value.trim();
+  const results = row.querySelector(".npc-results");
+  results.innerHTML = `<div class="empty-hint">Searching NPCs...</div>`;
+  const [profiles, pools] = await Promise.all([
+    api(`/api/npcs?kind=profiles&q=${encodeURIComponent(query)}&limit=12`),
+    api(`/api/npcs?kind=spawnPools&q=${encodeURIComponent(query)}&limit=6`),
+  ]);
+  const choices = [
+    ...(pools.npcs || []).map((pool) => ({
+      kind: "pool",
+      id: pool.id,
+      name: pool.name || pool.id,
+      sampleProfiles: pool.sampleProfiles || [],
+      meta: smallMeta(["Faction pool", `${(pool.sampleProfiles || []).length} ship types`]),
+    })),
+    ...(profiles.npcs || []).map((profile) => ({
+      kind: "profile",
+      id: profile.profileID,
+      name: profile.name || profile.profileID,
+      shipTypeName: profile.shipTypeName || "",
+      bounty: profile.bounty || 0,
+      meta: smallMeta([profile.shipTypeName, profile.bounty ? `${Number(profile.bounty).toLocaleString()} ISK` : ""]),
+    })),
+  ];
+  results.innerHTML = "";
+  if (!choices.length) {
+    results.innerHTML = `<div class="empty-hint">No NPCs match "${escapeHTML(query)}".</div>`;
+    return;
+  }
+  choices.forEach((choice) => {
+    const item = document.createElement("div");
+    item.className = "result-item";
+    item.innerHTML = `<div><div class="item-title"></div><div class="item-meta"></div></div><button class="secondary">${iconText("check", "Use")}</button>`;
+    item.querySelector(".item-title").textContent = choice.name;
+    item.querySelector(".item-meta").textContent = choice.meta;
+    item.querySelector("button").addEventListener("click", () => setEncounterNpc(encounter, choice));
+    results.appendChild(item);
+    hydrateIcons(item);
+  });
+}
+
+function renderNpcLine(encounter, group) {
+  const row = document.createElement("div");
+  const sourceId = npcSourceId(encounter);
+  const picking = missionState.pickerKey === encounter.key || !sourceId;
+  if (picking) {
+    row.className = "npc-line is-picking";
+    row.innerHTML = `
+      <div class="npc-picker">
+        <div class="search-row">
+          <input class="npc-search" placeholder="Search NPC by name or ship (e.g. Guristas, Kestrel)">
+          <button class="secondary square npc-search-btn">${iconText("search", "Search")}</button>
+          <button class="secondary npc-cancel">${iconText("x", "Cancel")}</button>
+        </div>
+        <div class="npc-results"></div>
+      </div>
+    `;
+    const search = row.querySelector(".npc-search");
+    row.querySelector(".npc-search-btn").addEventListener("click", () => runNpcPickerSearch(encounter, row));
+    search.addEventListener("keydown", (event) => { if (event.key === "Enter") runNpcPickerSearch(encounter, row); });
+    row.querySelector(".npc-cancel").addEventListener("click", () => {
+      if (!sourceId) {
+        const idx = missionState.encounters.indexOf(encounter);
+        if (idx >= 0) missionState.encounters.splice(idx, 1);
+      }
+      missionState.pickerKey = "";
+      renderMission();
+    });
+    runNpcPickerSearch(encounter, row);
+    return row;
+  }
+  row.className = "npc-line";
+  const display = npcDisplay(sourceId);
+  row.innerHTML = `
+    <input type="number" class="npc-count" min="1" value="${Math.max(1, Number(encounter.count) || 1)}" title="Count">
+    <span class="npc-times">${icon("x")}</span>
+    <div class="npc-chip">${icon(npcSourceIcon(encounter))}<div><strong>${escapeHTML(display.name)}</strong><span>${escapeHTML(display.meta)}</span></div></div>
+    <button class="secondary npc-change" title="Change NPC">${iconText("repeat", "")}</button>
+    <button class="remove-row npc-remove" title="Remove">${iconText("trash-2", "")}</button>
+  `;
+  row.querySelector(".npc-count").addEventListener("input", (event) => {
+    encounter.count = Math.max(1, Number(event.target.value) || 1);
+    encounter.amount = encounter.count;
+  });
+  row.querySelector(".npc-change").addEventListener("click", () => { missionState.pickerKey = encounter.key; renderMission(); });
+  row.querySelector(".npc-remove").addEventListener("click", () => {
+    const idx = missionState.encounters.indexOf(encounter);
+    if (idx >= 0) missionState.encounters.splice(idx, 1);
+    renderMission();
+  });
+  return row;
+}
+
+function applyToGroup(group, mutate) {
+  group.encounters.forEach(mutate);
+}
+
+function renderGroupCard(group) {
+  const objective = groupIsObjective(group);
+  const first = group.encounters[0] || {};
+  const card = document.createElement("div");
+  card.className = `spawn-group${objective ? " is-objective" : ""}`;
+  card.innerHTML = `
+    <div class="group-head">
+      <input class="group-name" value="${escapeHTML(group.name)}" title="Group name">
+      <label class="objective-flag"><input type="checkbox" class="group-objective"${objective ? " checked" : ""}><span>${iconText("target", "Objective")}</span></label>
+      <button class="remove-row remove-group" title="Remove group">${iconText("trash-2", "")}</button>
+    </div>
+    <div class="group-meta">
+      <label><span>Spawns</span><select class="group-trigger">${triggerOptionsHTML(first.trigger)}</select></label>
+      <label><span>Distance (m)</span><input type="number" class="group-distance" min="0" step="1000" value="${Number(first.distanceMeters) || 0}"></label>
+    </div>
+    <div class="npc-lines"></div>
+    <button class="secondary add-npc-btn">${iconText("plus", "Add NPC")}</button>
+  `;
+  const linesHost = card.querySelector(".npc-lines");
+  group.encounters.forEach((encounter) => linesHost.appendChild(renderNpcLine(encounter, group)));
+  card.querySelector(".group-name").addEventListener("change", (event) => {
+    const value = event.target.value.trim() || group.name;
+    applyToGroup(group, (e) => { e.sourceGroup = value; });
+    renderMission();
+  });
+  card.querySelector(".group-objective").addEventListener("change", (event) => {
+    const on = event.target.checked;
+    applyToGroup(group, (e) => { e.objective = on; e.completionRole = on ? "objective" : null; });
+    renderMission();
+  });
+  card.querySelector(".group-trigger").addEventListener("change", (event) => {
+    applyToGroup(group, (e) => { e.trigger = event.target.value; });
+  });
+  card.querySelector(".group-distance").addEventListener("input", (event) => {
+    const value = Number(event.target.value) || 0;
+    applyToGroup(group, (e) => { e.distanceMeters = value; });
+  });
+  card.querySelector(".add-npc-btn").addEventListener("click", () => {
+    const encounter = {
+      key: genEncounterKey(),
+      sourceGroup: group.name,
+      roomKey: group.roomKey,
+      trigger: first.trigger || "on_load",
+      distanceMeters: Number(first.distanceMeters) || 30000,
+      objective,
+      completionRole: objective ? "objective" : null,
+      count: 1,
+      profileID: "",
+    };
+    missionState.encounters.push(encounter);
+    missionState.pickerKey = encounter.key;
+    renderMission();
+  });
+  hydrateIcons(card);
+  return card;
+}
+
+function renderMissionPockets() {
+  const host = $("#missionPockets");
+  if (!host) return;
+  host.innerHTML = "";
+  if (!missionState.rooms.length) {
+    missionState.rooms = [{ roomKey: "room:combat", label: "Pocket 1", role: "combat", initialState: "active" }];
+  }
+  const groups = missionGroups();
+  missionState.rooms.forEach((room, roomIndex) => {
+    const pocket = document.createElement("div");
+    pocket.className = "pocket";
+    pocket.innerHTML = `
+      <div class="pocket-head">
+        <div class="pocket-title">
+          <span class="pocket-index">${roomIndex + 1}</span>
+          <input class="pocket-name" value="${escapeHTML(room.label || `Pocket ${roomIndex + 1}`)}" title="Pocket name">
+        </div>
+        <div class="pocket-tools">
+          <select class="pocket-role">${roleOptionsHTML(room.role)}</select>
+          <button class="secondary add-group-btn">${iconText("plus", "Group")}</button>
+          ${missionState.rooms.length > 1 ? `<button class="remove-row remove-pocket" title="Remove pocket">${iconText("trash-2", "")}</button>` : ""}
+        </div>
+      </div>
+      <div class="pocket-groups"></div>
+    `;
+    const groupsHost = pocket.querySelector(".pocket-groups");
+    const roomGroups = groups.filter((group) => group.roomKey === room.roomKey);
+    if (!roomGroups.length) {
+      groupsHost.innerHTML = `<div class="empty-hint">No spawn groups yet. Add a group of NPCs.</div>`;
+    }
+    roomGroups.forEach((group) => groupsHost.appendChild(renderGroupCard(group)));
+    pocket.querySelector(".pocket-name").addEventListener("change", (event) => { room.label = event.target.value.trim() || room.label; renderMissionOverview(); });
+    pocket.querySelector(".pocket-role").addEventListener("change", (event) => { room.role = event.target.value; });
+    pocket.querySelector(".add-group-btn").addEventListener("click", () => {
+      const encounter = {
+        key: genEncounterKey(),
+        sourceGroup: nextGroupName(room.roomKey),
+        roomKey: room.roomKey,
+        trigger: "on_load",
+        distanceMeters: 30000,
+        count: 1,
+        profileID: "",
+      };
+      missionState.encounters.push(encounter);
+      missionState.pickerKey = encounter.key;
+      renderMission();
+    });
+    const removePocket = pocket.querySelector(".remove-pocket");
+    if (removePocket) {
+      removePocket.addEventListener("click", () => {
+        missionState.encounters = missionState.encounters.filter((e) => (e.roomKey || "") !== room.roomKey);
+        missionState.rooms = missionState.rooms.filter((r) => r !== room);
+        renderMission();
+      });
+    }
+    host.appendChild(pocket);
+    hydrateIcons(pocket);
+  });
+}
+
+function renderMissionGates() {
+  const list = $("#missionGateList");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!missionState.gates.length) {
+    list.innerHTML = `<div class="empty-hint">No acceleration gates. Single-pocket missions don't need one; add a gate to connect multiple pockets.</div>`;
+    return;
+  }
+  missionState.gates.forEach((gate, index) => {
+    const row = document.createElement("div");
+    row.className = "editor-row";
+    const roomOptions = missionState.rooms
+      .map((room) => `<option value="${escapeHTML(room.roomKey)}"${room.roomKey === gate.destinationRoomKey ? " selected" : ""}>${escapeHTML(room.label || room.roomKey)}</option>`)
+      .join("");
+    row.innerHTML = `
+      <div class="editor-row-grid">
+        <label class="wide"><span>Leads To Pocket</span><select data-field="destinationRoomKey">${roomOptions}</select></label>
+        <label><span>Initial State</span><select data-field="initialState"><option value="unlocked">Unlocked</option><option value="locked">Locked</option></select></label>
+        <button class="remove-row">${iconText("trash-2", "Remove")}</button>
+      </div>
+    `;
+    bindRow(row, gate, () => { missionState.gates.splice(index, 1); renderMission(); });
+    list.appendChild(row);
     hydrateIcons(row);
   });
 }
 
+function renderMissionSelectedTemplate() {
+  const card = $("#missionSelectedTemplateCard");
+  if (!card) return;
+  const templateID = $("#missionTemplateIdInput").value.trim();
+  if (!missionState.baseTemplate) {
+    card.innerHTML = `
+      <div class="blank-state">
+        ${icon("file-plus-2")}
+        <div>
+          <strong>${missionState.missionID ? "Blank mission site" : "No linked dungeon template"}</strong>
+          <span>${templateID ? `Authoring ${escapeHTML(templateID)} as private mission combat.` : "Add rooms and encounters to define the mission site."}</span>
+        </div>
+      </div>
+    `;
+    hydrateIcons(card);
+    return;
+  }
+  const template = missionState.baseTemplate;
+  card.innerHTML = `
+    <div class="template-card-head">
+      <div>
+        <strong>${escapeHTML(template.name || template.templateID)}</strong>
+        <span>${escapeHTML(template.templateID)}</span>
+      </div>
+      <span class="status-pill">${deliveryLabel(template.delivery)}</span>
+    </div>
+    <div class="template-facts">
+      <span>${icon("radar")}${escapeHTML(`${template.siteFamily}/${template.siteKind}`)}</span>
+      <span>${icon("activity")}difficulty ${template.difficulty || 0}</span>
+      <span>${icon("waves")}${template.encounterCount || 0} waves</span>
+      <span>${icon("door-open")}${template.gateCount || 0} gates</span>
+    </div>
+  `;
+  hydrateIcons(card);
+}
+
+function renderMission() {
+  $("#missionEmpty").hidden = missionState.active;
+  $("#missionAuthoring").hidden = !missionState.active;
+  if (!missionState.active) return;
+  ensureEncounterKeys();
+  renderMissionOverview();
+  renderMissionSelectedTemplate();
+  renderMissionCompletionSummary();
+  renderMissionPockets();
+  renderMissionGates();
+  renderLootTables($("#missionLootList"), missionState.lootTables, renderMission);
+}
+
+function populateMissionForm({ title, templateID, status, missionType }) {
+  $("#missionTitleInput").value = title || "";
+  $("#missionTemplateIdInput").value = templateID || "";
+  $("#missionStatusInput").value = status || "draft";
+  $("#missionCategorySelect").value = missionType || "combat";
+}
+
+function renderMissionValidation(validation) {
+  const list = $("#missionValidationList");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!validation.findings.length) {
+    const ok = document.createElement("div");
+    ok.className = "validation-item ok";
+    ok.innerHTML = `${icon("check-circle-2")}<span>Valid mission template entry.</span>`;
+    list.appendChild(ok);
+    hydrateIcons(ok);
+    return;
+  }
+  validation.findings.forEach((finding) => {
+    const item = document.createElement("div");
+    item.className = `validation-item ${finding.level}`;
+    item.innerHTML = `${icon(finding.level === "error" ? "circle-alert" : "triangle-alert")}<span></span>`;
+    item.querySelector("span").textContent = `${finding.path}: ${finding.message}`;
+    list.appendChild(item);
+    hydrateIcons(item);
+  });
+}
+
+async function openMissionFromCatalog(mission) {
+  setView("missions");
+  let draft = {};
+  let baseTemplate = null;
+  try {
+    const data = await api(`/api/mission-security/draft?missionID=${encodeURIComponent(mission.missionID)}`);
+    draft = data.draft || {};
+    baseTemplate = data.baseTemplate || null;
+  } catch (error) {
+    showNotice(`Could not load mission site: ${error.message}`);
+  }
+  blankMissionState();
+  missionState.missionID = mission.missionID;
+  missionState.missionName = mission.name || "";
+  missionState.missionType = draft.missionType || mission.missionType || "combat";
+  missionState.rooms = Array.isArray(draft.rooms) ? structuredClone(draft.rooms) : [];
+  missionState.gates = Array.isArray(draft.gates) ? structuredClone(draft.gates) : [];
+  missionState.encounters = Array.isArray(draft.encounters) ? structuredClone(draft.encounters) : [];
+  missionState.lootTables = Array.isArray(draft.lootTables) ? structuredClone(draft.lootTables) : [];
+  missionState.completion = draft.completion && typeof draft.completion === "object" ? structuredClone(draft.completion) : null;
+  missionState.missionSecurity = draft.missionSecurity && typeof draft.missionSecurity === "object" ? structuredClone(draft.missionSecurity) : null;
+  missionState.sourceLinks = Array.isArray(draft.sourceLinks) ? structuredClone(draft.sourceLinks) : [];
+  missionState.baseTemplate = baseTemplate;
+  missionState.selectedTemplateRaw = baseTemplate && baseTemplate.raw ? baseTemplate.raw : null;
+  ensureEncounterKeys();
+  await resolveNpcIds(missionState.encounters.map(npcSourceId));
+  populateMissionForm({
+    title: draft.title || mission.name || `Mission ${mission.missionID}`,
+    templateID: draft.templateID || `admin:mission-security:${mission.missionID}`,
+    status: draft.status || "draft",
+    missionType: missionState.missionType,
+  });
+  $("#missionNotesInput").value = draft.notes || "";
+  renderMissionValidation({ findings: [], ok: true });
+  renderMission();
+  showNotice(`Loaded mission ${mission.missionID} into the Mission Designer.`);
+}
+
+function startBlankMission() {
+  setView("missions");
+  blankMissionState();
+  missionState.rooms = [{ roomKey: "room:combat", label: "Pocket 1", role: "combat", initialState: "active" }];
+  missionState.encounters = [];
+  populateMissionForm({ title: "", templateID: "", status: "draft", missionType: "combat" });
+  $("#missionNotesInput").value = "";
+  renderMissionValidation({ findings: [], ok: true });
+  renderMission();
+}
+
+function closeMission() {
+  missionState.active = false;
+  renderMission();
+}
+
+async function loadMissionOverlay(overlay) {
+  setView("missions");
+  blankMissionState();
+  missionState.loadedOverlayId = overlay.id;
+  missionState.missionType = overlay.missionType || "combat";
+  missionState.rooms = Array.isArray(overlay.rooms) ? structuredClone(overlay.rooms) : [];
+  missionState.gates = Array.isArray(overlay.gates) ? structuredClone(overlay.gates) : [];
+  missionState.encounters = Array.isArray(overlay.encounters) ? structuredClone(overlay.encounters) : [];
+  missionState.lootTables = Array.isArray(overlay.lootTables) ? structuredClone(overlay.lootTables) : [];
+  missionState.completion = overlay.completion && typeof overlay.completion === "object" ? structuredClone(overlay.completion) : null;
+  missionState.missionSecurity = overlay.missionSecurity && typeof overlay.missionSecurity === "object" ? structuredClone(overlay.missionSecurity) : null;
+  missionState.sourceLinks = Array.isArray(overlay.sourceLinks) ? structuredClone(overlay.sourceLinks) : [];
+  if (overlay.baseTemplateID) {
+    try {
+      const data = await api(`/api/templates/${encodeURIComponent(overlay.baseTemplateID)}`);
+      missionState.baseTemplate = data.template;
+      missionState.selectedTemplateRaw = data.template.raw || null;
+    } catch (_error) {
+      missionState.baseTemplate = null;
+    }
+  }
+  ensureEncounterKeys();
+  await resolveNpcIds(missionState.encounters.map(npcSourceId));
+  populateMissionForm({
+    title: overlay.title,
+    templateID: overlay.templateID || overlay.baseTemplateID || "",
+    status: overlay.status,
+    missionType: missionState.missionType,
+  });
+  $("#missionNotesInput").value = overlay.notes || "";
+  renderMissionValidation(overlay.validation || { findings: [], ok: true });
+  renderMission();
+  showNotice(`Loaded saved mission draft "${overlay.title || overlay.id}".`);
+}
+
+async function validateMission() {
+  const data = await api("/api/validate", { method: "POST", body: missionOverlayFromForm() });
+  renderMissionValidation(data.validation);
+  return data.validation;
+}
+
+async function saveMission() {
+  const result = await api("/api/overlays", { method: "POST", body: missionOverlayFromForm() });
+  missionState.loadedOverlayId = result.overlay.id;
+  renderMissionValidation(result.validation);
+  await loadOverlays();
+  await loadStatus();
+  showNotice("Mission draft saved to overlay workspace.");
+}
+
 async function searchMissions() {
-  const missionType = $("#missionTypeSelect").value;
-  const q = encodeURIComponent($("#missionSearchInput").value.trim());
+  const missionType = $("#missionCatalogType").value;
+  const q = encodeURIComponent($("#missionCatalogSearch").value.trim());
   const data = await api(`/api/missions?missionType=${encodeURIComponent(missionType)}&q=${q}&limit=96`);
   const grid = $("#missionResults");
   grid.innerHTML = "";
@@ -1970,13 +2502,12 @@ async function searchMissions() {
       `mission ${mission.missionID}`,
       missionTypeLabel(mission.missionType),
       mission.missionFlavor,
-      mission.contentTemplate,
       missionObjectiveSummary(mission),
     ]);
     const button = row.querySelector("button");
     if (mission.missionType === "combat" && mission.linkedTemplateID) {
-      button.innerHTML = iconText("file-input", "Use");
-      button.addEventListener("click", () => loadMissionIntoBuilder(mission));
+      button.innerHTML = iconText("file-input", "Author");
+      button.addEventListener("click", () => openMissionFromCatalog(mission));
     } else {
       button.innerHTML = iconText("info", mission.missionType === "courier" ? "Hauling" : "No Site");
       button.disabled = true;
@@ -2010,8 +2541,8 @@ async function loadResearch() {
 
 function bindEvents() {
   $$(".nav-button").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
+  $$("#builderSteps .step-button").forEach((button) => button.addEventListener("click", () => setBuilderStep(button.dataset.step)));
   $("#deliverySelect").addEventListener("change", (event) => setDelivery(event.target.value));
-  $("#builderMissionTypeSelect").addEventListener("change", (event) => setMissionType(event.target.value));
   $("#loadTemplateButton").addEventListener("click", loadTemplateID);
   $("#templateIdInput").addEventListener("keydown", (event) => { if (event.key === "Enter") loadTemplateID(); });
   $$("#scopeModeControl button").forEach((button) => button.addEventListener("click", () => setScopeMode(button.dataset.scopeMode)));
@@ -2026,11 +2557,40 @@ function bindEvents() {
   $("#resourceSearchButton").addEventListener("click", searchResources);
   $("#resourceSearchInput").addEventListener("keydown", (event) => { if (event.key === "Enter") searchResources(); });
   $("#systemsViewButton").addEventListener("click", () => searchSystems("systems"));
-  $("#securityMissionSearchButton").addEventListener("click", searchSecurityMissions);
-  $("#securityMissionSearchInput").addEventListener("keydown", (event) => { if (event.key === "Enter") searchSecurityMissions(); });
-  $("#missionSearchButton").addEventListener("click", searchMissions);
-  $("#missionSearchInput").addEventListener("keydown", (event) => { if (event.key === "Enter") searchMissions(); });
-  $("#missionTypeSelect").addEventListener("change", searchMissions);
+  $("#missionCatalogSearchBtn").addEventListener("click", searchMissions);
+  $("#missionCatalogSearch").addEventListener("keydown", (event) => { if (event.key === "Enter") searchMissions(); });
+  $("#missionCatalogType").addEventListener("change", searchMissions);
+  $("#missionNewButton").addEventListener("click", startBlankMission);
+  $("#missionCloseBtn").addEventListener("click", closeMission);
+  $("#missionSaveBtn").addEventListener("click", saveMission);
+  $("#missionValidateBtn").addEventListener("click", validateMission);
+  $("#missionCategorySelect").addEventListener("change", () => { missionState.missionType = $("#missionCategorySelect").value; renderMissionOverview(); });
+  $("#missionTitleInput").addEventListener("input", renderMissionOverview);
+  $("#missionTemplateIdInput").addEventListener("input", renderMissionSelectedTemplate);
+  $("#addPocketBtn").addEventListener("click", () => {
+    const index = missionState.rooms.length + 1;
+    missionState.rooms.push({
+      roomKey: `room:pocket_${index}`,
+      label: `Pocket ${index}`,
+      role: "combat",
+      initialState: missionState.rooms.length === 0 ? "active" : "pending",
+    });
+    renderMission();
+  });
+  $("#addMissionGateBtn").addEventListener("click", () => {
+    missionState.gates.push({
+      gateKey: `gate:${missionState.gates.length + 1}`,
+      label: "Acceleration Gate",
+      typeID: 17831,
+      destinationRoomKey: (missionState.rooms[missionState.rooms.length - 1] && missionState.rooms[missionState.rooms.length - 1].roomKey) || "room:combat",
+      initialState: "unlocked",
+    });
+    renderMission();
+  });
+  $("#addMissionLootBtn").addEventListener("click", () => {
+    missionState.lootTables.push(defaultLootTable());
+    renderMission();
+  });
   $("#npcSearchButton").addEventListener("click", searchNpcs);
   $("#npcSearchInput").addEventListener("keydown", (event) => { if (event.key === "Enter") searchNpcs(); });
   $("#npcKindSelect").addEventListener("change", searchNpcs);
@@ -2039,25 +2599,6 @@ function bindEvents() {
   $("#newLootProfileButton").addEventListener("click", addNewLootProfile);
   $("#addEncounterButton").addEventListener("click", () => {
     state.encounters.push({ profileID: "generic_hostile", count: 1, trigger: state.encounters.length ? "wave_cleared" : "on_load", targetPolicy: "nearest_player" });
-    renderAll();
-  });
-  $("#addMissionRoomButton").addEventListener("click", () => {
-    state.rooms.push({
-      roomKey: state.rooms.length === 0 ? "room:entry" : `room:mission_${state.rooms.length + 1}`,
-      label: state.rooms.length === 0 ? "Entry Pocket" : `Mission Room ${state.rooms.length + 1}`,
-      role: state.rooms.length === 0 ? "entry" : "combat",
-      initialState: state.rooms.length === 0 ? "active" : "pending",
-    });
-    renderAll();
-  });
-  $("#addMissionGateButton").addEventListener("click", () => {
-    state.gates.push({
-      gateKey: `gate:${state.gates.length + 1}`,
-      label: "Acceleration Gate",
-      typeID: 17831,
-      destinationRoomKey: state.rooms[1] && state.rooms[1].roomKey || "room:entry",
-      initialState: "unlocked",
-    });
     renderAll();
   });
   $("#addResourceButton").addEventListener("click", () => {
@@ -2075,7 +2616,6 @@ function bindEvents() {
   $("#validateButton").addEventListener("click", validateCurrent);
   $("#saveOverlayButton").addEventListener("click", saveOverlay);
   $("#newOverlayButton").addEventListener("click", resetForm);
-  $("#generatePackButton").addEventListener("click", () => previewPack(true));
   $("#refreshPackButton").addEventListener("click", () => previewPack(false));
   $("#writePackButton").addEventListener("click", () => previewPack(true));
   $("#loadResearchButton").addEventListener("click", loadResearch);
@@ -2092,17 +2632,18 @@ function bindEvents() {
 async function init() {
   renderFamilyControl();
   bindEvents();
+  setBuilderStep("define");
   syncContentControls();
   applyDefaultsForCurrentContent();
   renderSpawnScope();
   setAnchorKind("system");
+  renderMission();
   await loadStatus();
   await loadBuilderLookups();
   await loadLootProfiles();
   await loadTemplateOptions();
   await loadOverlays();
   await searchSystems("systems");
-  await searchSecurityMissions();
   await searchMissions();
   await searchNpcs();
   await loadResearch();

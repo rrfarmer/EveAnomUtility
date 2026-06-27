@@ -17,14 +17,22 @@
           </div>
         </div>
         <nav class="nav">
-          <button class="nav-button is-active" data-view="builder"><i data-lucide="wrench" class="icon"></i><span>Builder</span></button>
-          <button class="nav-button" data-view="systems"><i data-lucide="map" class="icon"></i><span>Systems</span></button>
-          <button class="nav-button" data-view="mission-security"><i data-lucide="shield" class="icon"></i><span>Security</span></button>
-          <button class="nav-button" data-view="missions"><i data-lucide="briefcase" class="icon"></i><span>Missions</span></button>
-          <button class="nav-button" data-view="npcs"><i data-lucide="bot" class="icon"></i><span>NPCs</span></button>
-          <button class="nav-button" data-view="loot"><i data-lucide="package-open" class="icon"></i><span>Loot</span></button>
-          <button class="nav-button" data-view="pack"><i data-lucide="package" class="icon"></i><span>Pack</span></button>
-          <button class="nav-button" data-view="research"><i data-lucide="book-open" class="icon"></i><span>Research</span></button>
+          <div class="nav-group">
+            <p class="nav-group-label">Author</p>
+            <button class="nav-button is-active" data-view="builder"><i data-lucide="wrench" class="icon"></i><span>Site Builder</span></button>
+            <button class="nav-button" data-view="missions"><i data-lucide="briefcase" class="icon"></i><span>Mission Designer</span></button>
+          </div>
+          <div class="nav-group">
+            <p class="nav-group-label">Library</p>
+            <button class="nav-button" data-view="systems"><i data-lucide="map" class="icon"></i><span>Systems</span></button>
+            <button class="nav-button" data-view="npcs"><i data-lucide="bot" class="icon"></i><span>NPCs</span></button>
+            <button class="nav-button" data-view="loot"><i data-lucide="package-open" class="icon"></i><span>Loot Profiles</span></button>
+          </div>
+          <div class="nav-group">
+            <p class="nav-group-label">Output</p>
+            <button class="nav-button" data-view="pack"><i data-lucide="package" class="icon"></i><span>Template Pack</span></button>
+            <button class="nav-button" data-view="research"><i data-lucide="book-open" class="icon"></i><span>Research</span></button>
+          </div>
         </nav>
         <div class="rail-status">
           <div>
@@ -45,13 +53,11 @@
       <main class="main">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Server-side template authoring</p>
-            <h2 id="viewTitle">Builder</h2>
+            <p class="eyebrow" id="viewEyebrow">Server-side template authoring</p>
+            <h2 id="viewTitle">Site Builder</h2>
           </div>
           <div class="topbar-actions">
             <button class="secondary" id="cloneDbButton"><i data-lucide="database" class="icon"></i><span>Clone DB</span></button>
-            <button class="primary" id="saveOverlayButton"><i data-lucide="save" class="icon"></i><span>Save Draft</span></button>
-            <button class="primary accent" id="generatePackButton"><i data-lucide="package-plus" class="icon"></i><span>Generate Pack</span></button>
           </div>
         </header>
 
@@ -65,195 +71,208 @@
         <datalist id="resourceTypeOptions"></datalist>
 
         <section class="view is-active" id="view-builder">
+          <div class="builder-steps" id="builderSteps">
+            <button class="step-button is-active" data-step="define"><span class="step-index">1</span><span>Define</span></button>
+            <button class="step-button" data-step="placement"><span class="step-index">2</span><span>Placement</span></button>
+            <button class="step-button" data-step="contents"><span class="step-index">3</span><span>Contents</span></button>
+            <button class="step-button" data-step="review"><span class="step-index">4</span><span>Review &amp; Save</span></button>
+          </div>
+
           <div class="builder-layout">
             <section class="panel builder-form" aria-label="Template builder">
-              <div class="section-heading">
-                <h3><i data-lucide="library" class="icon"></i><span>Template Library</span></h3>
-                <div class="content-summary" id="contentSummary"></div>
-              </div>
 
-              <div class="family-grid" id="familyControl"></div>
-
-              <div class="form-grid template-id-row">
-                <label>
-                  <span>Delivery</span>
-                  <select id="deliverySelect"></select>
-                </label>
-                <label>
-                  <span>Status</span>
-                  <select id="statusInput">
-                    <option value="draft">Draft</option>
-                    <option value="ready">Ready</option>
-                    <option value="disabled">Disabled</option>
-                  </select>
-                </label>
-                <label class="mission-category-field" id="missionCategoryField" hidden>
-                  <span>Mission Category</span>
-                  <select id="builderMissionTypeSelect">
-                    <option value="combat">Security</option>
-                    <option value="courier">Courier</option>
-                    <option value="mining">Mining</option>
-                    <option value="trade">Trade</option>
-                    <option value="talk_to_agent">Talk To Agent</option>
-                    <option value="agent_interaction">Agent Interaction</option>
-                    <option value="other">Other</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Title</span>
-                  <input id="titleInput" placeholder="Guristas Forward Rally Point">
-                </label>
-                <label class="span-2">
-                  <span>Template ID</span>
-                  <div class="search-row">
-                    <input id="templateIdInput" placeholder="admin:combat:forward-rally-point or existing EveJS templateID">
-                    <button class="secondary square" id="loadTemplateButton" title="Load or start template"><i data-lucide="file-search" class="icon"></i><span>Load</span></button>
-                  </div>
-                </label>
-                <label class="span-2">
-                  <span>Existing Template</span>
-                  <div class="template-picker">
-                    <div class="search-row">
-                      <input id="templateSearchInput" placeholder="Filter dropdown by name or templateID">
-                      <button class="secondary square" id="templateSearchButton" title="Filter templates"><i data-lucide="filter" class="icon"></i><span>Filter</span></button>
-                    </div>
-                    <div class="search-row">
-                      <select id="templateSelect">
-                        <option value="">Loading filtered templates...</option>
-                      </select>
-                      <button class="secondary square" id="useTemplateButton" title="Use selected template"><i data-lucide="check" class="icon"></i><span>Use</span></button>
-                    </div>
-                    <div class="picker-meta" id="templateSelectMeta"></div>
-                  </div>
-                </label>
-              </div>
-
-              <div class="selected-template" id="selectedTemplateCard"></div>
-
-              <div class="section-heading">
-                <h3><i data-lucide="crosshair" class="icon"></i><span>Spawn Rules</span></h3>
-                <div class="segmented" id="scopeModeControl">
-                  <button class="is-active" data-scope-mode="any_eligible"><i data-lucide="globe-2" class="icon"></i><span>Any</span></button>
-                  <button data-scope-mode="security_bands"><i data-lucide="shield" class="icon"></i><span>Bands</span></button>
-                  <button data-scope-mode="specific_system"><i data-lucide="orbit" class="icon"></i><span>System</span></button>
-                  <button data-scope-mode="specific_stargate"><i data-lucide="landmark" class="icon"></i><span>Gate</span></button>
-                </div>
-              </div>
-
-              <div class="rule-panel">
-                <div class="scope-helper" id="scopeHelper"></div>
-                <div class="check-grid" id="securityBandControl">
-                  <label><input type="checkbox" value="highsec" checked><span>Highsec</span></label>
-                  <label><input type="checkbox" value="lowsec" checked><span>Lowsec</span></label>
-                  <label><input type="checkbox" value="nullsec" checked><span>Nullsec</span></label>
-                  <label><input type="checkbox" value="wormhole" checked><span>Wormhole</span></label>
-                </div>
-                <div class="form-grid rule-grid">
-                  <label>
-                    <span>Weight</span>
-                    <input id="spawnWeightInput" type="number" min="0" step="0.1" value="1">
-                  </label>
-                  <label>
-                    <span>Max Per System</span>
-                    <input id="maxPerSystemInput" type="number" min="1" value="1">
-                  </label>
-                  <label>
-                    <span>Respawn Minutes</span>
-                    <input id="respawnMinutesInput" type="number" min="1" value="60">
-                  </label>
-                  <label>
-                    <span>Slot Count</span>
-                    <input id="slotCountInput" type="number" min="1" value="1">
-                  </label>
-                </div>
-              </div>
-
-              <div class="section-heading">
-                <h3><i data-lucide="locate-fixed" class="icon"></i><span>Placement</span></h3>
-                <div class="segmented" id="anchorKindControl">
-                  <button class="is-active" data-anchor-kind="system"><i data-lucide="orbit" class="icon"></i><span>System</span></button>
-                  <button data-anchor-kind="stargate"><i data-lucide="landmark" class="icon"></i><span>Gate</span></button>
-                  <button data-anchor-kind="coordinate"><i data-lucide="locate-fixed" class="icon"></i><span>Coords</span></button>
-                </div>
-              </div>
-
-              <div id="systemScopeBlock">
-                <div class="form-grid">
-                  <label class="span-2">
-                    <span>Specific Solar System</span>
-                    <div class="search-row">
-                      <input id="systemSearchInput" placeholder="Search by name or ID">
-                      <button class="secondary square" id="systemSearchButton" title="Search systems"><i data-lucide="search" class="icon"></i><span>Search</span></button>
-                    </div>
-                  </label>
-                </div>
-                <div class="system-picked" id="selectedSystem"></div>
-                <div class="results-strip" id="systemResults"></div>
-                <div class="gate-list" id="gateList"></div>
-              </div>
-
-              <div class="coordinate-grid" id="coordinateGrid" hidden>
-                <label><span>X</span><input id="coordX" type="number" value="0"></label>
-                <label><span>Y</span><input id="coordY" type="number" value="0"></label>
-                <label><span>Z</span><input id="coordZ" type="number" value="0"></label>
-              </div>
-
-              <div class="section-heading">
-                <h3><i data-lucide="radar" class="icon"></i><span>Encounters</span></h3>
-                <button class="secondary" id="addEncounterButton"><i data-lucide="plus" class="icon"></i><span>Add Wave</span></button>
-              </div>
-              <div id="encounterList" class="editor-list"></div>
-
-              <div class="mission-layout-section">
+              <!-- STEP 1: DEFINE -->
+              <div class="builder-step is-active" data-step-panel="define">
                 <div class="section-heading">
-                  <h3><i data-lucide="door-open" class="icon"></i><span>Mission Rooms</span></h3>
-                  <div class="topbar-actions">
-                    <button class="secondary" id="addMissionRoomButton"><i data-lucide="plus" class="icon"></i><span>Room</span></button>
-                    <button class="secondary" id="addMissionGateButton"><i data-lucide="plus" class="icon"></i><span>Gate</span></button>
+                  <h3><i data-lucide="library" class="icon"></i><span>Template Library</span></h3>
+                  <div class="content-summary" id="contentSummary"></div>
+                </div>
+                <p class="section-hint">Pick the kind of space content you are authoring, then name it or load an existing EveJS template to start from.</p>
+
+                <div class="family-grid" id="familyControl"></div>
+
+                <div class="form-grid template-id-row">
+                  <label>
+                    <span>Delivery</span>
+                    <select id="deliverySelect"></select>
+                  </label>
+                  <label>
+                    <span>Status</span>
+                    <select id="statusInput">
+                      <option value="draft">Draft</option>
+                      <option value="ready">Ready</option>
+                      <option value="disabled">Disabled</option>
+                    </select>
+                  </label>
+                  <label class="span-2">
+                    <span>Title</span>
+                    <input id="titleInput" placeholder="Guristas Forward Rally Point">
+                  </label>
+                  <label class="span-2">
+                    <span>Template ID</span>
+                    <div class="search-row">
+                      <input id="templateIdInput" placeholder="admin:combat:forward-rally-point or existing EveJS templateID">
+                      <button class="secondary square" id="loadTemplateButton" title="Load or start template"><i data-lucide="file-search" class="icon"></i><span>Load</span></button>
+                    </div>
+                  </label>
+                  <label class="span-2">
+                    <span>Existing Template</span>
+                    <div class="template-picker">
+                      <div class="search-row">
+                        <input id="templateSearchInput" placeholder="Filter dropdown by name or templateID">
+                        <button class="secondary square" id="templateSearchButton" title="Filter templates"><i data-lucide="filter" class="icon"></i><span>Filter</span></button>
+                      </div>
+                      <div class="search-row">
+                        <select id="templateSelect">
+                          <option value="">Loading filtered templates...</option>
+                        </select>
+                        <button class="secondary square" id="useTemplateButton" title="Use selected template"><i data-lucide="check" class="icon"></i><span>Use</span></button>
+                      </div>
+                      <div class="picker-meta" id="templateSelectMeta"></div>
+                    </div>
+                  </label>
+                </div>
+
+                <div class="selected-template" id="selectedTemplateCard"></div>
+              </div>
+
+              <!-- STEP 2: PLACEMENT -->
+              <div class="builder-step" data-step-panel="placement">
+                <div class="section-heading">
+                  <h3><i data-lucide="crosshair" class="icon"></i><span>Spawn Rules</span></h3>
+                  <div class="segmented" id="scopeModeControl">
+                    <button class="is-active" data-scope-mode="any_eligible"><i data-lucide="globe-2" class="icon"></i><span>Any</span></button>
+                    <button data-scope-mode="security_bands"><i data-lucide="shield" class="icon"></i><span>Bands</span></button>
+                    <button data-scope-mode="specific_system"><i data-lucide="orbit" class="icon"></i><span>System</span></button>
+                    <button data-scope-mode="specific_stargate"><i data-lucide="landmark" class="icon"></i><span>Gate</span></button>
                   </div>
                 </div>
-                <div id="missionLayoutList" class="editor-list"></div>
+
+                <div class="rule-panel">
+                  <div class="scope-helper" id="scopeHelper"></div>
+                  <div class="check-grid" id="securityBandControl">
+                    <label><input type="checkbox" value="highsec" checked><span>Highsec</span></label>
+                    <label><input type="checkbox" value="lowsec" checked><span>Lowsec</span></label>
+                    <label><input type="checkbox" value="nullsec" checked><span>Nullsec</span></label>
+                    <label><input type="checkbox" value="wormhole" checked><span>Wormhole</span></label>
+                  </div>
+                  <div class="form-grid rule-grid">
+                    <label>
+                      <span>Weight</span>
+                      <input id="spawnWeightInput" type="number" min="0" step="0.1" value="1">
+                    </label>
+                    <label>
+                      <span>Max Per System</span>
+                      <input id="maxPerSystemInput" type="number" min="1" value="1">
+                    </label>
+                    <label>
+                      <span>Respawn Minutes</span>
+                      <input id="respawnMinutesInput" type="number" min="1" value="60">
+                    </label>
+                    <label>
+                      <span>Slot Count</span>
+                      <input id="slotCountInput" type="number" min="1" value="1">
+                    </label>
+                  </div>
+                </div>
+
+                <div class="section-heading">
+                  <h3><i data-lucide="locate-fixed" class="icon"></i><span>Placement</span></h3>
+                  <div class="segmented" id="anchorKindControl">
+                    <button class="is-active" data-anchor-kind="system"><i data-lucide="orbit" class="icon"></i><span>System</span></button>
+                    <button data-anchor-kind="stargate"><i data-lucide="landmark" class="icon"></i><span>Gate</span></button>
+                    <button data-anchor-kind="coordinate"><i data-lucide="locate-fixed" class="icon"></i><span>Coords</span></button>
+                  </div>
+                </div>
+
+                <div id="systemScopeBlock">
+                  <div class="form-grid">
+                    <label class="span-2">
+                      <span>Specific Solar System</span>
+                      <div class="search-row">
+                        <input id="systemSearchInput" placeholder="Search by name or ID">
+                        <button class="secondary square" id="systemSearchButton" title="Search systems"><i data-lucide="search" class="icon"></i><span>Search</span></button>
+                      </div>
+                    </label>
+                  </div>
+                  <div class="system-picked" id="selectedSystem"></div>
+                  <div class="results-strip" id="systemResults"></div>
+                  <div class="gate-list" id="gateList"></div>
+                </div>
+
+                <div class="coordinate-grid" id="coordinateGrid" hidden>
+                  <label><span>X</span><input id="coordX" type="number" value="0"></label>
+                  <label><span>Y</span><input id="coordY" type="number" value="0"></label>
+                  <label><span>Z</span><input id="coordZ" type="number" value="0"></label>
+                </div>
               </div>
 
-              <div class="section-heading">
-                <h3><i data-lucide="gem" class="icon"></i><span>Resources</span></h3>
-                <button class="secondary" id="addResourceButton"><i data-lucide="plus" class="icon"></i><span>Add Resource</span></button>
-              </div>
-              <div class="search-row resource-search">
-                <input id="resourceSearchInput" placeholder="Search individual ore, ice, gas, or typeID">
-                <button class="secondary square" id="resourceSearchButton" title="Search resources"><i data-lucide="search" class="icon"></i><span>Search</span></button>
-              </div>
-              <div class="results-strip" id="resourceResults"></div>
-              <div id="resourceList" class="editor-list"></div>
+              <!-- STEP 3: CONTENTS -->
+              <div class="builder-step" data-step-panel="contents">
+                <p class="section-hint" id="contentsEmpty" hidden>This content family has no extra content modules. Configure placement and continue to review.</p>
 
-              <div class="section-heading">
-                <h3><i data-lucide="sliders-horizontal" class="icon"></i><span>NPC Overrides</span></h3>
-                <button class="secondary" id="addOverrideButton"><i data-lucide="plus" class="icon"></i><span>Add Override</span></button>
-              </div>
-              <div id="overrideList" class="editor-list"></div>
+                <div class="section-block" data-section="encounters">
+                  <div class="section-heading">
+                    <h3><i data-lucide="radar" class="icon"></i><span>Encounters</span></h3>
+                    <button class="secondary" id="addEncounterButton"><i data-lucide="plus" class="icon"></i><span>Add Wave</span></button>
+                  </div>
+                  <div id="encounterList" class="editor-list"></div>
+                </div>
 
-              <div class="section-heading">
-                <h3><i data-lucide="package-open" class="icon"></i><span>Loot Tables</span></h3>
-                <button class="secondary" id="addLootTableButton"><i data-lucide="plus" class="icon"></i><span>Add Loot Table</span></button>
-              </div>
-              <div id="lootTableList" class="editor-list"></div>
+                <div class="section-block" data-section="resources">
+                  <div class="section-heading">
+                    <h3><i data-lucide="gem" class="icon"></i><span>Resources</span></h3>
+                    <button class="secondary" id="addResourceButton"><i data-lucide="plus" class="icon"></i><span>Add Resource</span></button>
+                  </div>
+                  <div class="search-row resource-search">
+                    <input id="resourceSearchInput" placeholder="Search individual ore, ice, gas, or typeID">
+                    <button class="secondary square" id="resourceSearchButton" title="Search resources"><i data-lucide="search" class="icon"></i><span>Search</span></button>
+                  </div>
+                  <div class="results-strip" id="resourceResults"></div>
+                  <div id="resourceList" class="editor-list"></div>
+                </div>
 
-              <label class="notes-label">
-                <span>Notes</span>
-                <textarea id="notesInput" rows="4" placeholder="Authoring notes"></textarea>
-              </label>
+                <div class="section-block" data-section="npcOverrides">
+                  <div class="section-heading">
+                    <h3><i data-lucide="sliders-horizontal" class="icon"></i><span>NPC Overrides</span></h3>
+                    <button class="secondary" id="addOverrideButton"><i data-lucide="plus" class="icon"></i><span>Add Override</span></button>
+                  </div>
+                  <div id="overrideList" class="editor-list"></div>
+                </div>
+
+                <div class="section-block" data-section="lootTables">
+                  <div class="section-heading">
+                    <h3><i data-lucide="package-open" class="icon"></i><span>Loot Tables</span></h3>
+                    <button class="secondary" id="addLootTableButton"><i data-lucide="plus" class="icon"></i><span>Add Loot Table</span></button>
+                  </div>
+                  <div id="lootTableList" class="editor-list"></div>
+                </div>
+              </div>
+
+              <!-- STEP 4: REVIEW -->
+              <div class="builder-step" data-step-panel="review">
+                <div class="section-heading">
+                  <h3><i data-lucide="shield-check" class="icon"></i><span>Validation</span></h3>
+                  <button class="secondary" id="validateButton"><i data-lucide="check-circle-2" class="icon"></i><span>Validate</span></button>
+                </div>
+                <div id="validationList" class="validation-list"></div>
+
+                <label class="notes-label">
+                  <span>Notes</span>
+                  <textarea id="notesInput" rows="4" placeholder="Authoring notes"></textarea>
+                </label>
+
+                <div class="step-footer">
+                  <button class="secondary" id="newOverlayButton"><i data-lucide="file-plus-2" class="icon"></i><span>New Draft</span></button>
+                  <button class="primary" id="saveOverlayButton"><i data-lucide="save" class="icon"></i><span>Save Draft</span></button>
+                </div>
+              </div>
+
             </section>
 
-            <aside class="panel builder-side" aria-label="Validation and saved templates">
+            <aside class="panel builder-side" aria-label="Saved drafts and preview">
               <div class="section-heading">
-                <h3><i data-lucide="shield-check" class="icon"></i><span>Validation</span></h3>
-                <button class="secondary" id="validateButton"><i data-lucide="check-circle-2" class="icon"></i><span>Validate</span></button>
-              </div>
-              <div id="validationList" class="validation-list"></div>
-
-              <div class="section-heading">
-                <h3><i data-lucide="folder-open" class="icon"></i><span>Saved</span></h3>
-                <button class="secondary" id="newOverlayButton"><i data-lucide="file-plus-2" class="icon"></i><span>New</span></button>
+                <h3><i data-lucide="folder-open" class="icon"></i><span>Saved Drafts</span></h3>
               </div>
               <div id="overlayList" class="overlay-list"></div>
 
@@ -266,6 +285,120 @@
               </div>
               <pre class="json-preview" id="overlayPreview"></pre>
             </aside>
+          </div>
+        </section>
+
+        <section class="view" id="view-missions">
+          <div class="mission-layout">
+            <aside class="panel mission-catalog" aria-label="Mission catalog">
+              <div class="section-heading">
+                <h3><i data-lucide="folder-search" class="icon"></i><span>Mission Catalog</span></h3>
+                <button class="primary" id="missionNewButton" title="Start a blank mission"><i data-lucide="file-plus-2" class="icon"></i><span>New</span></button>
+              </div>
+              <div class="catalog-tools">
+                <label class="catalog-field">
+                  <span>Mission Category</span>
+                  <select id="missionCatalogType">
+                    <option value="all">All</option>
+                    <option value="combat" selected>Security / Combat</option>
+                    <option value="courier">Courier</option>
+                    <option value="mining">Mining</option>
+                    <option value="trade">Trade</option>
+                    <option value="talk_to_agent">Talk To Agent</option>
+                    <option value="agent_interaction">Agent Interaction</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <div class="search-row">
+                  <input id="missionCatalogSearch" placeholder="Search name, ID, or template">
+                  <button class="secondary square" id="missionCatalogSearchBtn"><i data-lucide="search" class="icon"></i><span>Search</span></button>
+                </div>
+              </div>
+              <div id="missionResults" class="data-grid"></div>
+            </aside>
+
+            <section class="panel mission-authoring" aria-label="Mission authoring">
+              <div class="mission-empty" id="missionEmpty">
+                <i data-lucide="briefcase" class="icon"></i>
+                <strong>No mission loaded</strong>
+                <span>Pick a combat mission from the catalog to author its dungeon site, or start a blank mission with <b>New</b>.</span>
+              </div>
+
+              <div id="missionAuthoring" hidden>
+                <div class="fact-bar" id="missionOverview"></div>
+
+                <div class="section-heading">
+                  <h3><i data-lucide="briefcase" class="icon"></i><span>Mission Definition</span></h3>
+                </div>
+                <div class="form-grid">
+                  <label>
+                    <span>Mission Category</span>
+                    <select id="missionCategorySelect">
+                      <option value="combat">Security / Combat</option>
+                      <option value="courier">Courier</option>
+                      <option value="mining">Mining</option>
+                      <option value="trade">Trade</option>
+                      <option value="talk_to_agent">Talk To Agent</option>
+                      <option value="agent_interaction">Agent Interaction</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Status</span>
+                    <select id="missionStatusInput">
+                      <option value="draft">Draft</option>
+                      <option value="ready">Ready</option>
+                      <option value="disabled">Disabled</option>
+                    </select>
+                  </label>
+                  <label class="span-2">
+                    <span>Title</span>
+                    <input id="missionTitleInput" placeholder="The Score (Guristas) - Level 1">
+                  </label>
+                  <label class="span-2">
+                    <span>Template ID</span>
+                    <input id="missionTemplateIdInput" placeholder="admin:mission-security:2391">
+                  </label>
+                </div>
+                <div class="selected-template" id="missionSelectedTemplateCard"></div>
+
+                <div class="section-heading">
+                  <h3><i data-lucide="swords" class="icon"></i><span>Pockets &amp; Spawns</span></h3>
+                  <button class="secondary" id="addPocketBtn"><i data-lucide="plus" class="icon"></i><span>Add Pocket</span></button>
+                </div>
+                <p class="section-hint">A mission is one or more pockets. Each pocket holds groups of NPCs; add NPCs to a group by name and flag the group that must be destroyed to complete the mission.</p>
+                <div class="objective-summary" id="missionCompletionSummary"></div>
+                <div id="missionPockets"></div>
+
+                <div class="section-heading">
+                  <h3><i data-lucide="route" class="icon"></i><span>Acceleration Gates</span></h3>
+                  <button class="secondary" id="addMissionGateBtn"><i data-lucide="plus" class="icon"></i><span>Add Gate</span></button>
+                </div>
+                <div id="missionGateList" class="editor-list"></div>
+
+                <div class="section-heading">
+                  <h3><i data-lucide="package-open" class="icon"></i><span>Loot Tables</span></h3>
+                  <button class="secondary" id="addMissionLootBtn"><i data-lucide="plus" class="icon"></i><span>Add Loot Table</span></button>
+                </div>
+                <div id="missionLootList" class="editor-list"></div>
+
+                <label class="notes-label">
+                  <span>Notes</span>
+                  <textarea id="missionNotesInput" rows="3" placeholder="Authoring notes"></textarea>
+                </label>
+
+                <div class="section-heading">
+                  <h3><i data-lucide="shield-check" class="icon"></i><span>Validation</span></h3>
+                  <button class="secondary" id="missionValidateBtn"><i data-lucide="check-circle-2" class="icon"></i><span>Validate</span></button>
+                </div>
+                <div id="missionValidationList" class="validation-list"></div>
+
+                <div class="step-footer">
+                  <button class="secondary" id="missionCloseBtn"><i data-lucide="x" class="icon"></i><span>Close</span></button>
+                  <button class="primary" id="missionSaveBtn"><i data-lucide="save" class="icon"></i><span>Save Draft</span></button>
+                </div>
+              </div>
+            </section>
           </div>
         </section>
 
@@ -308,53 +441,15 @@
         <section class="view" id="view-loot">
           <section class="panel">
             <div class="section-heading">
-              <h3><i data-lucide="package-open" class="icon"></i><span>Loot Table Profiles</span></h3>
+              <h3><i data-lucide="package-open" class="icon"></i><span>Reusable Loot Profiles</span></h3>
               <div class="catalog-tools loot-profile-tools">
                 <input id="lootProfileSearchInput" list="npcLootTableOptions" placeholder="generic_random_any or new loot table ID">
                 <button class="secondary square" id="loadLootProfileButton"><i data-lucide="download" class="icon"></i><span>Load</span></button>
                 <button class="secondary square" id="newLootProfileButton"><i data-lucide="plus" class="icon"></i><span>New</span></button>
               </div>
             </div>
+            <p class="section-hint">Reusable NPC loot-table profiles shared across templates. Per-site loot lives in the Site Builder and Mission Designer Contents.</p>
             <div id="lootProfileList" class="editor-list"></div>
-          </section>
-        </section>
-
-        <section class="view" id="view-missions">
-          <section class="panel">
-            <div class="section-heading">
-              <h3><i data-lucide="briefcase" class="icon"></i><span>Mission Catalog</span></h3>
-              <div class="catalog-tools">
-                <label class="catalog-field">
-                  <span>Mission Category</span>
-                  <select id="missionTypeSelect">
-                    <option value="all">All</option>
-                    <option value="combat">Security</option>
-                    <option value="courier">Courier</option>
-                    <option value="mining">Mining</option>
-                    <option value="trade">Trade</option>
-                    <option value="talk_to_agent">Talk To Agent</option>
-                    <option value="agent_interaction">Agent Interaction</option>
-                    <option value="other">Other</option>
-                  </select>
-                </label>
-                <input id="missionSearchInput" placeholder="Search mission name, ID, or template">
-                <button class="secondary square" id="missionSearchButton"><i data-lucide="search" class="icon"></i><span>Search</span></button>
-              </div>
-            </div>
-            <div id="missionResults" class="data-grid"></div>
-          </section>
-        </section>
-
-        <section class="view" id="view-mission-security">
-          <section class="panel">
-            <div class="section-heading">
-              <h3><i data-lucide="shield" class="icon"></i><span>Missions: Security</span></h3>
-              <div class="catalog-tools">
-                <input id="securityMissionSearchInput" placeholder="Search Security mission name, ID, or dungeon">
-                <button class="secondary square" id="securityMissionSearchButton"><i data-lucide="search" class="icon"></i><span>Search</span></button>
-              </div>
-            </div>
-            <div id="securityMissionResults" class="data-grid"></div>
           </section>
         </section>
 
