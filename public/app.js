@@ -1897,8 +1897,9 @@ function missionOverlayFromForm() {
 const npcCache = new Map();
 
 function npcSourceId(encounter) {
+  const candidate = encounter && Array.isArray(encounter.candidateNames) ? encounter.candidateNames[0] : "";
   return String(
-    (encounter && (encounter.profileID || encounter.spawnPoolID || encounter.spawnGroupID || encounter.spawnQuery)) || "",
+    (encounter && (encounter.profileID || encounter.spawnPoolID || encounter.spawnGroupID || encounter.spawnQuery)) || candidate || "",
   ).trim();
 }
 
@@ -2130,7 +2131,10 @@ function renderNpcLine(encounter, group) {
     return row;
   }
   row.className = "npc-line";
-  const display = npcDisplay(sourceId);
+  // Scraped spawns carry ship names (candidateNames) rather than a resolved NPC profile.
+  const display = (Array.isArray(encounter.candidateNames) && encounter.candidateNames.length)
+    ? { name: encounter.shipClass || "NPC", meta: encounter.candidateNames.join(" / ") }
+    : npcDisplay(sourceId);
   row.innerHTML = `
     <input type="number" class="npc-count" min="1" value="${Math.max(1, Number(encounter.count) || 1)}" title="Count">
     <span class="npc-times">${icon("x")}</span>
@@ -2481,6 +2485,84 @@ async function saveMission() {
   showNotice("Mission draft saved to overlay workspace.");
 }
 
+// Load a scraped eve-survival mission into the Pockets -> Groups -> NPC editor.
+function loadScrapedMission(mission) {
+  setView("missions");
+  blankMissionState();
+  missionState.wakka = mission.wakka || "";
+  missionState.missionType = "combat";
+  missionState.missionSecurity = {
+    faction: mission.faction || "",
+    level: mission.level || null,
+    objectiveSummary: mission.blitz || "",
+    damageProfile: mission.damageToDeal || "",
+    ewar: mission.ewar || "",
+    recommendedShip: mission.recommendedShip || "",
+    sourceName: "EVE-Survival",
+    sourceUrl: mission.url || "",
+  };
+  missionState.rooms = (mission.rooms || []).map((room, index) => ({
+    roomKey: `room:${index + 1}`,
+    label: room.title || `Pocket ${index + 1}`,
+    role: "combat",
+    initialState: index === 0 ? "active" : "pending",
+  }));
+  if (!missionState.rooms.length) missionState.rooms = [{ roomKey: "room:1", label: "Pocket 1", role: "combat", initialState: "active" }];
+  missionState.encounters = [];
+  (mission.rooms || []).forEach((room, roomIndex) => {
+    const roomKey = missionState.rooms[roomIndex].roomKey;
+    (room.groups || []).forEach((group) => {
+      (group.spawns || []).forEach((spawn) => {
+        missionState.encounters.push({
+          key: genEncounterKey(),
+          sourceGroup: group.title || "Group",
+          roomKey,
+          trigger: "on_load",
+          distanceMeters: group.distance ? group.distance.minMeters : 0,
+          objective: group.objective === true,
+          completionRole: group.objective ? "objective" : null,
+          count: Math.max(1, Number(spawn.count) || 1),
+          shipClass: spawn.shipClass || "",
+          candidateNames: Array.isArray(spawn.shipNames) ? spawn.shipNames.slice() : [],
+          spawnQuery: (spawn.shipNames || [])[0] || "",
+        });
+      });
+    });
+  });
+  populateMissionForm({ title: mission.title || mission.wakka, templateID: `eve-survival:${mission.wakka}`, status: "draft", missionType: "combat" });
+  $("#missionNotesInput").value = [mission.blitz ? `Blitz: ${mission.blitz}` : "", mission.ewar ? `EWAR: ${mission.ewar}` : ""].filter(Boolean).join("\n");
+  renderMissionValidation({ findings: [], ok: true });
+  renderMission();
+}
+
+async function importScrapedMission() {
+  const input = $("#scrapeInput").value.trim();
+  if (!input) { showNotice("Enter an eve-survival wakka or URL (e.g. Score1gu)."); return; }
+  $("#scrapeMeta").textContent = "Scraping eve-survival...";
+  try {
+    const data = await api(`/api/scrape?wakka=${encodeURIComponent(input)}`);
+    const mission = data.mission;
+    const npc = (mission.rooms || []).reduce((n, r) => n + (r.groups || []).reduce((m, g) => m + (g.spawns || []).length, 0), 0);
+    $("#scrapeMeta").textContent = `Imported ${mission.title} — ${mission.faction || "?"} (${(mission.rooms || []).length} pocket(s), ${npc} spawn lines).`;
+    loadScrapedMission(mission);
+    showNotice(`Imported "${mission.title}" from eve-survival. Review and apply to the test emulator.`);
+  } catch (error) {
+    $("#scrapeMeta").textContent = `Scrape failed: ${error.message}`;
+  }
+}
+
+async function applyMissionToEmulator() {
+  const wakka = missionState.wakka || $("#missionTemplateIdInput").value.replace(/^eve-survival:/, "").trim();
+  if (!wakka) { showNotice("This mission has no eve-survival source. Import from a wakka/URL first."); return; }
+  if (!window.confirm(`Scrape eve-survival:${wakka} and patch the EveJS test-emulator sandbox? (Never touches live data.)`)) return;
+  try {
+    const result = await api("/api/scrape/apply", { method: "POST", body: { wakka } });
+    showNotice(`${result.action} ${result.templateID} in the sandbox. Verify with: npm run emu-test -- --wakka ${wakka}`);
+  } catch (error) {
+    showNotice(`Apply failed: ${error.message}`);
+  }
+}
+
 async function searchMissions() {
   const missionType = $("#missionCatalogType").value;
   const q = encodeURIComponent($("#missionCatalogSearch").value.trim());
@@ -2563,6 +2645,9 @@ function bindEvents() {
   $("#missionNewButton").addEventListener("click", startBlankMission);
   $("#missionCloseBtn").addEventListener("click", closeMission);
   $("#missionSaveBtn").addEventListener("click", saveMission);
+  $("#scrapeImportBtn").addEventListener("click", importScrapedMission);
+  $("#scrapeInput").addEventListener("keydown", (event) => { if (event.key === "Enter") importScrapedMission(); });
+  $("#missionApplyEmuBtn").addEventListener("click", applyMissionToEmulator);
   $("#missionValidateBtn").addEventListener("click", validateMission);
   $("#missionCategorySelect").addEventListener("change", () => { missionState.missionType = $("#missionCategorySelect").value; renderMissionOverview(); });
   $("#missionTitleInput").addEventListener("input", renderMissionOverview);

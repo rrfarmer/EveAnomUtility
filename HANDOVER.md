@@ -94,6 +94,19 @@ Hard boundary: do not modify EVE client data or require client-side edits. Serve
 - 2026-06-27 Mission Designer spawn overhaul: NPC spawns are authored as a **Pockets -> Groups -> NPC lines** outline (`renderMissionPockets`/`renderGroupCard`/`renderNpcLine` in `public/app.js`). The flat `encounters[]` schema is unchanged; the UI groups it by `(roomKey, sourceGroup)`. An **Add NPC** search picker resolves profiles/pools by name (ship/faction/bounty) and stores `profileID`/`spawnPoolID`. Completion is derived from per-group **Objective** toggles (`encounter_group_cleared` + `encounterKeys`). An overview fact bar reads `missionSecurity` (faction/level/objective/EWAR/damage). New endpoint `GET /api/npcs/resolve?ids=` (`src/lib/catalog.js` `resolveNpc`) powers name resolution.
 - `src/lib/missionSecurity.js` `buildTheScoreGuristasDraft` models The Score (Guristas L1) per EveJS `client-dungeon:921`: one combat pocket (`room:entry`, "Entry Pocket") reached through the warp-in **acceleration gate** (pulled from the template's `siteSceneProfile.gateProfiles` via `firstBaseGate`), `profileID` spawns triggered `on_room_active`, Group 2 as the objective, plus `damageProfile`/`ewar`/`recommendedShip` overview fields. The gate is real client data, not a synthetic addition — do not drop it.
 - The Builder `mission` content family and the in-Builder Mission Rooms section were removed.
+- 2026-06-27 scrape-to-EveJS pipeline: agent missions in EveJS spawn from **eve-survival mission templates**
+  (`eve-survival:<Wakka>`, e.g. `eve-survival:Score1gu` = The Score/Guristas) via `rooms[].groups[].spawnEntries`
+  (`candidateNames` ship names) — NOT `client-dungeon:<id>`/`populationHints` (that's the Site Builder/anomaly
+  format). New: `src/lib/missionScraper.js` (on-demand eve-survival.org scraper), `src/lib/eveSurvivalTemplate.js`
+  (-> EveJS schema), `src/lib/sandbox.js` (safe gameStore copy/patch), `scripts/scrape-apply.js`
+  (`npm run scrape-apply -- --wakka Score1gu`), `scripts/emu-test-mission.js` (`npm run emu-test`), and a
+  Mission Designer "Import from eve-survival" + "Apply to Emulator" flow (`/api/scrape`, `/api/scrape/apply`).
+  Proven end-to-end: scrape -> apply to sandbox -> a L1 security agent accepts The Score -> the accepted
+  instance spawns the scraped groups. See `TESTING.md`.
+- Caveat (EveJS-side): the mission->eve-survival-template matcher is fuzzy and region/faction dependent, so a
+  given L1 agent may resolve The Score to a different variant (e.g. `Score1an`); `emu-test` reports which.
+  Scraping is on-demand and lives only in this utility; EveJS never scrapes. Everything runs against
+  `eve.js/_local/gameStore-test/` — the live gameStore is never written.
 - Local app: `http://127.0.0.1:4732`
 - Package root: `D:\EveAnomUtility`
 - Icon system: local `lucide` package served from `/vendor/lucide.js`; no CDN dependency.

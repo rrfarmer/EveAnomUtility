@@ -6,9 +6,13 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/server.js && node --check src/lib/catalog.js && node --check src/lib/dataStore.js && node --check src/lib/missionSecurity.js && node --check src/lib/npcAuthoringStore.js && node --check src/lib/overlayStore.js && node --check src/lib/templatePack.js && node --check src/lib/validator.js && node --check public/app.js && node --check scripts/smoke-test.js && node --check scripts/visual-check.js",
+    "check": "node --check src/server.js && node --check src/lib/catalog.js && node --check src/lib/dataStore.js && node --check src/lib/missionSecurity.js && node --check src/lib/missionScraper.js && node --check src/lib/eveSurvivalTemplate.js && node --check src/lib/sandbox.js && node --check src/lib/npcAuthoringStore.js && node --check src/lib/overlayStore.js && node --check src/lib/templatePack.js && node --check src/lib/validator.js && node --check public/app.js && node --check scripts/smoke-test.js && node --check scripts/visual-check.js && node --check scripts/apply-to-sandbox.js && node --check scripts/scrape-apply.js && node --check scripts/emu-test-mission.js && node --check scripts/scrape-test.js",
     "smoke": "node scripts/smoke-test.js",
-    "visual-check": "node scripts/visual-check.js"
+    "scrape-test": "node scripts/scrape-test.js",
+    "visual-check": "node scripts/visual-check.js",
+    "apply-mission": "node scripts/apply-to-sandbox.js",
+    "scrape-apply": "node scripts/scrape-apply.js",
+    "emu-test": "node scripts/emu-test-mission.js"
   },
   "engines": {
     "node": ">=22"

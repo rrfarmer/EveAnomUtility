@@ -315,6 +315,16 @@
                 </div>
               </div>
               <div id="missionResults" class="data-grid"></div>
+
+              <div class="section-heading">
+                <h3><i data-lucide="globe" class="icon"></i><span>Import from eve-survival</span></h3>
+              </div>
+              <p class="section-hint">Scrape a mission from eve-survival.org on demand. Loads into the editor below to review, then apply to the test emulator.</p>
+              <div class="search-row">
+                <input id="scrapeInput" placeholder="Score1gu  or  https://eve-survival.org/?wakka=Score1gu">
+                <button class="secondary square" id="scrapeImportBtn" title="Scrape and load"><i data-lucide="download" class="icon"></i><span>Import</span></button>
+              </div>
+              <div class="picker-meta" id="scrapeMeta"></div>
             </aside>
 
             <section class="panel mission-authoring" aria-label="Mission authoring">
@@ -395,7 +405,10 @@
 
                 <div class="step-footer">
                   <button class="secondary" id="missionCloseBtn"><i data-lucide="x" class="icon"></i><span>Close</span></button>
-                  <button class="primary" id="missionSaveBtn"><i data-lucide="save" class="icon"></i><span>Save Draft</span></button>
+                  <div class="topbar-actions">
+                    <button class="secondary" id="missionApplyEmuBtn" title="Scrape this mission and patch the test emulator sandbox"><i data-lucide="database" class="icon"></i><span>Apply to Emulator</span></button>
+                    <button class="primary" id="missionSaveBtn"><i data-lucide="save" class="icon"></i><span>Save Draft</span></button>
+                  </div>
                 </div>
               </div>
             </section>

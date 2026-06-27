@@ -42,6 +42,18 @@ const {
   PACK_FILE,
   buildTemplatePack,
 } = require("./lib/templatePack");
+const {
+  scrapeEveSurvival,
+} = require("./lib/missionScraper");
+const {
+  patchExistingTemplate,
+  buildTemplate,
+} = require("./lib/eveSurvivalTemplate");
+const {
+  ensureSandbox,
+  readDungeonAuthority,
+  writeDungeonAuthority,
+} = require("./lib/sandbox");
 
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
 const LUCIDE_FILE = path.join(__dirname, "..", "node_modules", "lucide", "dist", "umd", "lucide.min.js");
@@ -346,6 +358,53 @@ async function routeApi(req, res, url) {
       success: true,
       validation: validateOverlay(await readBody(req)),
     });
+    return true;
+  }
+
+  // On-demand scrape of a community mission DB (eve-survival.org). Only runs when the user asks.
+  if (req.method === "GET" && url.pathname === "/api/scrape") {
+    const input = url.searchParams.get("url") || url.searchParams.get("wakka") || "";
+    if (!input) {
+      sendError(res, 400, "Provide ?wakka=<Wakka> or ?url=<eve-survival url>.");
+      return true;
+    }
+    try {
+      const mission = await scrapeEveSurvival(input);
+      sendJson(res, 200, { success: true, mission });
+    } catch (error) {
+      sendError(res, 502, `Scrape failed: ${error.message}`);
+    }
+    return true;
+  }
+
+  // Scrape + apply to the EveJS gameStore sandbox (never live).
+  if (req.method === "POST" && url.pathname === "/api/scrape/apply") {
+    const body = await readBody(req);
+    const input = body.url || body.wakka || "";
+    if (!input) {
+      sendError(res, 400, "Provide { wakka } or { url }.");
+      return true;
+    }
+    try {
+      const mission = await scrapeEveSurvival(input);
+      const templateID = `eve-survival:${mission.wakka}`;
+      const sandbox = await ensureSandbox({ reset: body.reset === true });
+      const dungeon = await readDungeonAuthority(sandbox.sandboxDataDir);
+      dungeon.templatesByID = dungeon.templatesByID || {};
+      const existing = dungeon.templatesByID[templateID];
+      if (existing) patchExistingTemplate(existing, mission);
+      else dungeon.templatesByID[templateID] = buildTemplate(mission);
+      await writeDungeonAuthority(sandbox.sandboxDataDir, dungeon);
+      sendJson(res, 200, {
+        success: true,
+        templateID,
+        action: existing ? "patched" : "inserted",
+        sandboxDataDir: sandbox.sandboxDataDir,
+        mission,
+      });
+    } catch (error) {
+      sendError(res, 502, `Scrape/apply failed: ${error.message}`);
+    }
     return true;
   }
 
