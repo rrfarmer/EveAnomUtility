@@ -16,6 +16,7 @@
 
 const path = require("path");
 const { loadMissionPack, summarizeMissionPack } = require("../src/lib/missionPack");
+const { validateMissionTemplate } = require("../src/lib/missionTemplateValidator");
 const {
   resolveApplyTarget,
   backupTemplateOnce,
@@ -86,6 +87,9 @@ async function main() {
   }
   dungeon.templatesByID[templateID] = pack.dungeon;
   await writeDungeonAuthority(applyTarget.dataDir, dungeon);
+  for (const warning of validateMissionTemplate(pack.dungeon).warnings) {
+    process.stderr.write(`  warn: ${warning}\n`);
+  }
 
   const forceFlags = [
     summary.missionID ? `EVEJS_FORCE_MISSION_ID=${summary.missionID}` : null,

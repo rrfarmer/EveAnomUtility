@@ -13,6 +13,7 @@
 
 const { scrapeEveSurvival } = require("../src/lib/missionScraper");
 const { patchExistingTemplate, buildTemplate, missionHasAccelerationGate } = require("../src/lib/eveSurvivalTemplate");
+const { validateMissionTemplate } = require("../src/lib/missionTemplateValidator");
 const { resolveApplyTarget, backupTemplateOnce, readDungeonAuthority, writeDungeonAuthority } = require("../src/lib/sandbox");
 
 function parseArgs(argv) {
@@ -86,6 +87,9 @@ async function main() {
   }
   await writeDungeonAuthority(applyTarget.dataDir, dungeon);
 
+  for (const warning of validateMissionTemplate(dungeon.templatesByID[templateID]).warnings) {
+    process.stderr.write(`  warn: ${warning}\n`);
+  }
   const npcSpawns = mission.rooms.reduce((n, r) => n + r.groups.reduce((m, g) => m + g.spawns.length, 0), 0);
   process.stdout.write(
     [
