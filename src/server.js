@@ -6,6 +6,10 @@ const { URL } = require("node:url");
 const {
   cloneDatabase,
   getStatus,
+  resolveEveRoot,
+  getStaticTableDir,
+  getLiveDataDir,
+  readTable,
 } = require("./lib/dataStore");
 const {
   deleteTemplateFromClone,
@@ -417,6 +421,34 @@ async function routeApi(req, res, url) {
       });
     } catch (error) {
       sendError(res, 502, `Scrape/apply failed: ${error.message}`);
+    }
+    return true;
+  }
+
+  // Load ANY existing dungeon template by id for editing (D2). Reads the static-table source of
+  // truth (DatabaseCreator/staticTables/dungeonAuthority), falling back to the built _local gameStore.
+  if (req.method === "GET" && url.pathname === "/api/template") {
+    const id = url.searchParams.get("id") || "";
+    if (!id) {
+      sendError(res, 400, "Provide ?id=<templateID>.");
+      return true;
+    }
+    try {
+      const eveRoot = resolveEveRoot();
+      let dungeon = readTable(getStaticTableDir(eveRoot), "dungeonAuthority", null);
+      let source = "static";
+      if (!dungeon || !dungeon.templatesByID) {
+        dungeon = readTable(getLiveDataDir(eveRoot), "dungeonAuthority", { templatesByID: {} });
+        source = "live";
+      }
+      const template = dungeon.templatesByID && dungeon.templatesByID[id];
+      if (!template) {
+        sendError(res, 404, `Template not found: ${id}`);
+        return true;
+      }
+      sendJson(res, 200, { success: true, source, templateID: id, template });
+    } catch (error) {
+      sendError(res, 500, `Template load failed: ${error.message}`);
     }
     return true;
   }

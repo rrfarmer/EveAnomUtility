@@ -55,6 +55,13 @@ function getSourceDataDir(eveRoot = resolveEveRoot()) {
   return path.join(eveRoot, "server", "src", "newDatabase", "data");
 }
 
+// The DatabaseCreator static-table source (the version-controlled source of truth). Authored mission
+// content is written here, then a full `CreateDatabase --force` builds it into _local (see
+// MISSION_MECHANICS_PLAN.md §2). dungeonAuthority/missionAuthority are required static overrides.
+function getStaticTableDir(eveRoot = resolveEveRoot()) {
+  return path.join(eveRoot, "tools", "DatabaseCreator", "staticTables");
+}
+
 function normalizePathForCompare(value) {
   return path.resolve(value).toLowerCase();
 }
@@ -220,6 +227,7 @@ module.exports = {
   getDirectoryStats,
   getLiveDataDir,
   getSourceDataDir,
+  getStaticTableDir,
   getStatus,
   readJsonFile,
   readTable,
