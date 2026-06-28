@@ -77,12 +77,58 @@ function buildObjectiveHints(mission) {
   return [{ kind: "blitz", text: mission.blitz, source: "eve-survival" }];
 }
 
+// "Acceleration Gate" item type (EveJS spawns it from siteSceneProfile.gateProfiles).
+const ACCELERATION_GATE_TYPE_ID = 17831;
+
+// True when the mission has any NPC spawns, i.e. it is a combat/encounter mission (as opposed to
+// a courier/objective-only one). Combat missions are the ones that gate-start.
+function missionLooksCombat(mission) {
+  return (mission.rooms || []).some((room) =>
+    (room.spawns || []).length > 0 ||
+    (room.groups || []).some((group) => (group.spawns || []).length > 0));
+}
+
+// Acceleration-gate policy: combat/security missions gate-start BY DEFAULT (warp in to the gate,
+// activate, fight the pocket). Non-combat missions and anomalies do not. An explicit
+// `hasAccelerationGate` (e.g. scrape-apply --gate/--no-gate, or a Mission Designer toggle) always
+// wins; `spaceType.hasAccelerationGates`/`gateDetected` are softer hints.
+function missionHasAccelerationGate(mission) {
+  if (mission.hasAccelerationGate === true) return true;
+  if (mission.hasAccelerationGate === false) return false;
+  if (mission.spaceType && mission.spaceType.hasAccelerationGates === true) return true;
+  if (mission.gateDetected === true) return true;
+  return missionLooksCombat(mission);
+}
+
+// When the mission has an acceleration gate, emit one gate from the warp-in landing into the
+// first pocket. EveJS marks gate-destination rooms `on_room_active`, so the player warps in to
+// just the gate, activates it, and the pocket's NPCs spawn on the far side — retail flow.
+function buildGateProfiles(rooms, mission) {
+  if (!missionHasAccelerationGate(mission) || rooms.length === 0) return [];
+  return [{
+    gateKey: "gate:entry",
+    label: "Acceleration Gate",
+    typeID: ACCELERATION_GATE_TYPE_ID,
+    typeNameCandidates: ["Acceleration Gate"],
+    source: "eve_anom_utility",
+    destinationRoomKey: `room:${rooms[0].roomId}`,
+    fromObjectID: null,
+    toObjectID: null,
+  }];
+}
+
 // Patch an EXISTING eve-survival template: replace spawn-bearing rooms + counts, preserve everything else.
 function patchExistingTemplate(target, mission) {
   const rooms = buildRooms(mission);
   target.rooms = rooms;
   target.populationHints = buildPopulationHints(rooms, mission);
   target.objectiveHints = buildObjectiveHints(mission);
+  // Author the acceleration gate (or clear it) so the gate-first flow matches the scrape.
+  target.siteSceneProfile = {
+    ...(target.siteSceneProfile || {}),
+    gateProfiles: buildGateProfiles(rooms, mission),
+  };
+  if (target.spaceType) target.spaceType.hasAccelerationGates = missionHasAccelerationGate(mission);
   if (mission.faction) target.faction = mission.faction;
   if (mission.damageToDeal || mission.ewar || mission.recommendedShip) {
     target.advisory = {
@@ -115,7 +161,7 @@ function buildTemplate(mission) {
     faction: mission.faction || "",
     missionLevel: mission.level || null,
     sourceMissionID: `eve-survival:${wakka}`,
-    spaceType: { kind: "unknown", hasAccelerationGates: null, allowsMwd: null, raw: mission.spaceType || "" },
+    spaceType: { kind: "unknown", hasAccelerationGates: missionHasAccelerationGate(mission), allowsMwd: null, raw: mission.spaceType || "" },
     classification: {
       pageKind: "combat_structured",
       confidence: "authored",
@@ -135,7 +181,7 @@ function buildTemplate(mission) {
     siteSceneProfile: {
       source: "eve_anom_utility",
       roomProfiles: rooms.map((room) => ({ key: `room:${room.roomId}`, label: room.title })),
-      gateProfiles: [],
+      gateProfiles: buildGateProfiles(rooms, mission),
       structureProfiles: [],
       objectiveVisualProfiles: [],
     },
@@ -148,5 +194,6 @@ module.exports = {
   buildPopulationHints,
   buildTemplate,
   patchExistingTemplate,
+  missionHasAccelerationGate,
   spawnRaw,
 };

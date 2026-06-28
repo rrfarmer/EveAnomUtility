@@ -12,17 +12,22 @@
  */
 
 const { scrapeEveSurvival } = require("../src/lib/missionScraper");
-const { patchExistingTemplate, buildTemplate } = require("../src/lib/eveSurvivalTemplate");
-const { ensureSandbox, readDungeonAuthority, writeDungeonAuthority } = require("../src/lib/sandbox");
+const { patchExistingTemplate, buildTemplate, missionHasAccelerationGate } = require("../src/lib/eveSurvivalTemplate");
+const { resolveApplyTarget, backupTemplateOnce, readDungeonAuthority, writeDungeonAuthority } = require("../src/lib/sandbox");
 
 function parseArgs(argv) {
-  const args = { reset: false };
+  const args = { reset: false, target: "live" };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--reset") args.reset = true;
+    else if (token === "--sandbox") args.target = "sandbox";
+    else if (token === "--live") args.target = "live";
+    else if (token === "--target") args.target = String(argv[++i] || "live");
     else if (token === "--wakka") args.wakka = String(argv[++i] || "");
     else if (token === "--url") args.url = String(argv[++i] || "");
     else if (token === "--eve-root") args.eveRoot = String(argv[++i] || "");
+    else if (token === "--gate") args.gate = true;
+    else if (token === "--no-gate") args.gate = false;
   }
   return args;
 }
@@ -55,36 +60,45 @@ async function main() {
 
   process.stdout.write(`Scraping eve-survival: ${target}\n`);
   const mission = await scrapeEveSurvival(target);
+  // Combat missions gate-start by default; --gate / --no-gate is an explicit override.
+  if (args.gate !== undefined) mission.hasAccelerationGate = args.gate;
+  const gated = missionHasAccelerationGate(mission);
+  const gateReason = args.gate !== undefined ? "explicit" : (mission.gateDetected ? "detected" : "combat default");
+  process.stdout.write(`Acceleration gate: ${gated ? `yes (warp-in gate -> pocket spawns) [${gateReason}]` : `no (spawns on warp-in) [${args.gate === false ? "explicit --no-gate" : "non-combat"}]`}\n`);
   printMission(mission);
   const templateID = `eve-survival:${mission.wakka}`;
 
-  const sandbox = await ensureSandbox({ eveRoot: args.eveRoot, reset: args.reset });
-  const dungeon = await readDungeonAuthority(sandbox.sandboxDataDir);
+  const applyTarget = await resolveApplyTarget({ target: args.target, eveRoot: args.eveRoot, reset: args.reset });
+  const dungeon = await readDungeonAuthority(applyTarget.dataDir);
   dungeon.templatesByID = dungeon.templatesByID || {};
   const existing = dungeon.templatesByID[templateID];
 
   let action;
+  let backup = null;
   if (existing) {
+    if (applyTarget.target === "live") backup = await backupTemplateOnce(templateID, existing);
     patchExistingTemplate(existing, mission);
     action = "patched existing";
   } else {
     dungeon.templatesByID[templateID] = buildTemplate(mission);
     action = "inserted new";
   }
-  await writeDungeonAuthority(sandbox.sandboxDataDir, dungeon);
+  await writeDungeonAuthority(applyTarget.dataDir, dungeon);
 
   const npcSpawns = mission.rooms.reduce((n, r) => n + r.groups.reduce((m, g) => m + g.spawns.length, 0), 0);
   process.stdout.write(
     [
       "",
-      `Applied to sandbox (${action} ${templateID}).`,
-      `  sandbox: ${sandbox.sandboxDataDir}${sandbox.copied ? " (freshly copied)" : " (existing)"}`,
+      `Applied to ${applyTarget.target.toUpperCase()} (${action} ${templateID}).`,
+      `  data dir: ${applyTarget.dataDir}${applyTarget.copied ? " (freshly copied)" : ""}`,
       `  rooms / groups / npc spawn lines: ${mission.rooms.length} / ${mission.rooms.reduce((n, r) => n + r.groups.length, 0)} / ${npcSpawns}`,
+      backup ? `  backup of original: ${backup}` : "",
       "",
-      "Next: verify a Level 1 agent spawns it:",
-      `  npm run emu-test -- --wakka ${mission.wakka}`,
+      applyTarget.target === "live"
+        ? "Restart the EveJS server to load the change. To make any security agent serve it for a one-off test,\n  start the server with EVEJS_FORCE_MISSION_TEMPLATE=" + templateID
+        : `Next: verify a Level 1 agent spawns it:\n  npm run emu-test -- --wakka ${mission.wakka}`,
       "",
-    ].join("\n"),
+    ].filter((l) => l !== "").join("\n"),
   );
 }
 

@@ -9,7 +9,7 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 
-const { getLiveDataDir, resolveEveRoot, getDirectoryStats } = require("./dataStore");
+const { getLiveDataDir, resolveEveRoot, getDirectoryStats, WORKSPACE_ROOT } = require("./dataStore");
 
 function normalize(p) {
   return path.resolve(p).replace(/[\\/]+$/, "").toLowerCase();
@@ -66,6 +66,31 @@ async function writeDungeonAuthority(sandbox, data) {
   await writeJsonAtomic(dungeonAuthorityFile(sandbox), data);
 }
 
+// Resolve where an apply should write: the live gameStore (default — the whole point of the tool) or a
+// disposable sandbox copy (opt-in, for safe testing).
+async function resolveApplyTarget({ target = "live", eveRoot, reset = false } = {}) {
+  if (target === "sandbox") {
+    const sb = await ensureSandbox({ eveRoot, reset });
+    return { target: "sandbox", dataDir: sb.sandboxDataDir, copied: sb.copied };
+  }
+  const root = resolveEveRoot(eveRoot);
+  const dir = getLiveDataDir(root);
+  if (!fs.existsSync(dir)) throw new Error(`Live gameStore data dir not found: ${dir}`);
+  return { target: "live", dataDir: dir, copied: false };
+}
+
+// Keep a one-time backup of an original template before the first overwrite, so live edits are reversible.
+async function backupTemplateOnce(templateID, template) {
+  if (!template) return null;
+  const dir = path.join(WORKSPACE_ROOT, "backups", "dungeonAuthority");
+  await fsp.mkdir(dir, { recursive: true });
+  const safe = String(templateID).replace(/[^a-z0-9_.-]+/gi, "_");
+  const file = path.join(dir, `${safe}.json`);
+  if (fs.existsSync(file)) return null;
+  await fsp.writeFile(file, `${JSON.stringify(template, null, 2)}\n`, "utf8");
+  return file;
+}
+
 module.exports = {
   ensureSandbox,
   sandboxDataDir,
@@ -73,5 +98,7 @@ module.exports = {
   readDungeonAuthority,
   writeDungeonAuthority,
   writeJsonAtomic,
+  resolveApplyTarget,
+  backupTemplateOnce,
   normalize,
 };

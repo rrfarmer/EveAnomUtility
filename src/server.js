@@ -50,7 +50,8 @@ const {
   buildTemplate,
 } = require("./lib/eveSurvivalTemplate");
 const {
-  ensureSandbox,
+  resolveApplyTarget,
+  backupTemplateOnce,
   readDungeonAuthority,
   writeDungeonAuthority,
 } = require("./lib/sandbox");
@@ -388,18 +389,26 @@ async function routeApi(req, res, url) {
     try {
       const mission = await scrapeEveSurvival(input);
       const templateID = `eve-survival:${mission.wakka}`;
-      const sandbox = await ensureSandbox({ reset: body.reset === true });
-      const dungeon = await readDungeonAuthority(sandbox.sandboxDataDir);
+      const target = body.target === "sandbox" ? "sandbox" : "live";
+      const applyTarget = await resolveApplyTarget({ target, reset: body.reset === true });
+      const dungeon = await readDungeonAuthority(applyTarget.dataDir);
       dungeon.templatesByID = dungeon.templatesByID || {};
       const existing = dungeon.templatesByID[templateID];
-      if (existing) patchExistingTemplate(existing, mission);
-      else dungeon.templatesByID[templateID] = buildTemplate(mission);
-      await writeDungeonAuthority(sandbox.sandboxDataDir, dungeon);
+      let backup = null;
+      if (existing) {
+        if (applyTarget.target === "live") backup = await backupTemplateOnce(templateID, existing);
+        patchExistingTemplate(existing, mission);
+      } else {
+        dungeon.templatesByID[templateID] = buildTemplate(mission);
+      }
+      await writeDungeonAuthority(applyTarget.dataDir, dungeon);
       sendJson(res, 200, {
         success: true,
         templateID,
         action: existing ? "patched" : "inserted",
-        sandboxDataDir: sandbox.sandboxDataDir,
+        target: applyTarget.target,
+        dataDir: applyTarget.dataDir,
+        backup,
         mission,
       });
     } catch (error) {

@@ -2551,13 +2551,17 @@ async function importScrapedMission() {
   }
 }
 
-async function applyMissionToEmulator() {
+async function applyMissionToEmulator(target = "live") {
   const wakka = missionState.wakka || $("#missionTemplateIdInput").value.replace(/^eve-survival:/, "").trim();
   if (!wakka) { showNotice("This mission has no eve-survival source. Import from a wakka/URL first."); return; }
-  if (!window.confirm(`Scrape eve-survival:${wakka} and patch the EveJS test-emulator sandbox? (Never touches live data.)`)) return;
+  const where = target === "live" ? "the LIVE EveJS server" : "the test sandbox";
+  if (!window.confirm(`Scrape eve-survival:${wakka} and write it to ${where}? The original template is backed up first.`)) return;
   try {
-    const result = await api("/api/scrape/apply", { method: "POST", body: { wakka } });
-    showNotice(`${result.action} ${result.templateID} in the sandbox. Verify with: npm run emu-test -- --wakka ${wakka}`);
+    const result = await api("/api/scrape/apply", { method: "POST", body: { wakka, target } });
+    const note = result.target === "live"
+      ? `Wrote ${result.templateID} to the live server. Restart EveJS to load it.`
+      : `${result.action} ${result.templateID} in the sandbox. Verify: npm run emu-test -- --wakka ${wakka}`;
+    showNotice(note);
   } catch (error) {
     showNotice(`Apply failed: ${error.message}`);
   }

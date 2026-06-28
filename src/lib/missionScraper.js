@@ -236,6 +236,10 @@ function parseEveSurvival(html, wakka = "") {
     ewar: metaLine(tokens, "Extras") || metaLine(tokens, "EWAR"),
     recommendedShip: metaLine(tokens, "Recommended ship class") || metaLine(tokens, "Recommended ship"),
     blitz: blitzText.trim(),
+    // Best-effort detection hint (NOT a decision): a room heading mentioning a gate/acceleration
+    // implies a gated deadspace pocket. eve-survival omits this for single-pocket missions, so the
+    // template builder treats combat missions as gated by default; this only nudges the heuristic.
+    gateDetected: rooms.some((room) => !!room.gateHint),
     rooms,
     structures,
   };
