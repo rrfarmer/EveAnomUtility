@@ -2611,6 +2611,71 @@ async function applyMissionPack(dir, summary) {
   }
 }
 
+// --- Load / save any existing template (D3) ---
+async function loadTemplateById() {
+  const id = $("#templateInput").value.trim();
+  if (!id) { showNotice("Enter a template id (e.g. eve-survival:Score1gu)."); return; }
+  $("#templateMeta").textContent = "Loading template...";
+  try {
+    const data = await api(`/api/template?id=${encodeURIComponent(id)}`);
+    renderTemplateSummary(data.template, data.source);
+  } catch (error) {
+    $("#templateMeta").textContent = `Template load failed: ${error.message}`;
+  }
+}
+
+function summarizeTemplateForView(template) {
+  const ph = template.populationHints || {};
+  const encounters = Array.isArray(ph.encounters) ? ph.encounters : [];
+  const triggers = {};
+  for (const e of encounters) { const t = (e && e.trigger) || "on_load"; triggers[t] = (triggers[t] || 0) + 1; }
+  const gates = (template.siteSceneProfile && template.siteSceneProfile.gateProfiles) || [];
+  const miningRocks = Array.isArray(ph.miningRocks) ? ph.miningRocks : [];
+  return {
+    templateID: template.templateID,
+    title: template.title || template.templateID,
+    siteFamily: template.siteFamily, siteKind: template.siteKind,
+    objectiveMode: ph.objectiveMode || null,
+    objectiveQuantity: Number(ph.objectiveQuantity) || 0,
+    encounterCount: encounters.length, triggers,
+    gateCount: Array.isArray(gates) ? gates.length : 0,
+    miningRockCount: miningRocks.reduce((n, r) => n + (Number(r && r.count) || 0), 0),
+  };
+}
+
+function renderTemplateSummary(template, source) {
+  const meta = $("#templateMeta");
+  meta.textContent = "";
+  const s = summarizeTemplateForView(template);
+  const triggers = Object.entries(s.triggers).map(([t, c]) => `${c}x ${t}`).join(", ") || "none";
+  const facts = [
+    `${s.siteFamily || "?"} / ${s.siteKind || "?"} · source: ${source}`,
+    `${s.encounterCount} encounters (${triggers})`,
+    `gates: ${s.gateCount}`,
+    s.objectiveMode ? `objective: ${s.objectiveMode}${s.objectiveQuantity ? ` (qty ${s.objectiveQuantity})` : ""}` : null,
+    s.miningRockCount ? `mining rocks: ${s.miningRockCount}` : null,
+  ].filter(Boolean);
+  const wrap = document.createElement("div");
+  const title = document.createElement("strong"); title.textContent = s.title;
+  const sub = document.createElement("div"); sub.className = "picker-sub"; sub.textContent = s.templateID;
+  const list = document.createElement("ul"); list.className = "pack-facts";
+  for (const f of facts) { const li = document.createElement("li"); li.textContent = f; list.appendChild(li); }
+  const saveBtn = document.createElement("button"); saveBtn.className = "primary"; saveBtn.textContent = "Save to static tables";
+  saveBtn.addEventListener("click", () => saveTemplate(template));
+  wrap.append(title, sub, list, saveBtn);
+  meta.appendChild(wrap);
+}
+
+async function saveTemplate(template) {
+  if (!window.confirm(`Save ${template.templateID} to the static-table source of truth? Build with CreateDatabase --force to apply.`)) return;
+  try {
+    const result = await api("/api/template/save", { method: "POST", body: { templateID: template.templateID, template } });
+    showNotice(`Saved ${result.templateID} to ${result.target} (${result.action}). Run CreateDatabase --force to build it in.`);
+  } catch (error) {
+    showNotice(`Save failed: ${error.message}`);
+  }
+}
+
 async function applyMissionToEmulator(target = "live") {
   const wakka = missionState.wakka || $("#missionTemplateIdInput").value.replace(/^eve-survival:/, "").trim();
   if (!wakka) { showNotice("This mission has no eve-survival source. Import from a wakka/URL first."); return; }
@@ -2713,6 +2778,8 @@ function bindEvents() {
   $("#scrapeInput").addEventListener("keydown", (event) => { if (event.key === "Enter") importScrapedMission(); });
   $("#packImportBtn").addEventListener("click", importMissionPack);
   $("#packInput").addEventListener("keydown", (event) => { if (event.key === "Enter") importMissionPack(); });
+  $("#templateLoadBtn").addEventListener("click", loadTemplateById);
+  $("#templateInput").addEventListener("keydown", (event) => { if (event.key === "Enter") loadTemplateById(); });
   $("#missionApplyEmuBtn").addEventListener("click", applyMissionToEmulator);
   $("#missionValidateBtn").addEventListener("click", validateMission);
   $("#missionCategorySelect").addEventListener("change", () => { missionState.missionType = $("#missionCategorySelect").value; renderMissionOverview(); });
