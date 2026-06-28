@@ -4,11 +4,16 @@ This is the loop for getting a **mostly-accurate agent mission** out of the comm
 playable EveJS state. All scraping happens **only in this utility, on demand**. EveJS never scrapes — we write
 its data files directly.
 
-**Apply targets the LIVE gameStore by default** (`eve.js/_local/gameStore/data`) — overwriting the relevant
-`eve-survival:<Wakka>` template. The original template is backed up to
-`workspace/backups/dungeonAuthority/<id>.json` before the first overwrite. Pass `--sandbox` to apply to a
-disposable copy instead (for the headless harness). **Restart the EveJS server** after a live apply so it
-reloads the change.
+**Apply targets the STATIC-table source of truth by default**
+(`eve.js/tools/DatabaseCreator/staticTables/dungeonAuthority`) — overwriting the relevant template (the
+original is backed up to `workspace/backups/dungeonAuthority/<id>.json` first). This is version-controlled and
+persistent. **To test, run a full build** (`tools/DatabaseCreator/CreateDatabase.bat`, or
+`node tools/DatabaseCreator/database-creator.js --force`), which rebuilds `_local/gameStore/data` from the
+static tables; then start the server. We always full-build in development — no incremental syncs (see
+`MISSION_MECHANICS_PLAN.md` §2).
+
+`--live` is a **throwaway quick test**: it writes `_local/gameStore/data` directly and just needs a server
+restart, but is **wiped on the next `--force` build**. `--sandbox` writes a disposable copy (headless harness).
 
 ## Prove the loop directly: `/spawnsite` (simplest)
 
