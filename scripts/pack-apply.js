@@ -24,13 +24,14 @@ const {
 } = require("../src/lib/sandbox");
 
 function parseArgs(argv) {
-  const args = { reset: false, target: "live" };
+  const args = { reset: false, target: "static" };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--reset") args.reset = true;
     else if (token === "--sandbox") args.target = "sandbox";
     else if (token === "--live") args.target = "live";
-    else if (token === "--target") args.target = String(argv[++i] || "live");
+    else if (token === "--static") args.target = "static";
+    else if (token === "--target") args.target = String(argv[++i] || "static");
     else if (token === "--dir") args.dir = String(argv[++i] || "");
     else if (token === "--eve-root") args.eveRoot = String(argv[++i] || "");
   }
@@ -80,7 +81,7 @@ async function main() {
   const existing = dungeon.templatesByID[templateID];
 
   let backup = null;
-  if (existing && applyTarget.target === "live") {
+  if (existing && applyTarget.target !== "sandbox") {
     backup = await backupTemplateOnce(templateID, existing);
   }
   dungeon.templatesByID[templateID] = pack.dungeon;
@@ -99,7 +100,9 @@ async function main() {
       `  data dir: ${applyTarget.dataDir}${applyTarget.copied ? " (freshly copied)" : ""}`,
       backup ? `  backup of original: ${backup}` : "",
       "",
-      "Restart the EveJS server to load it. To play this mission via the temp force hooks, start with:",
+      applyTarget.target === "static"
+        ? "Wrote the static-table source of truth. Build it in: tools/DatabaseCreator/CreateDatabase.bat (or node tools/DatabaseCreator/database-creator.js --force), then start the server with:"
+        : "Restart the EveJS server to load it (throwaway on --live). To play it via the temp force hooks, start with:",
       ...forceFlags.map((flag) => `  ${flag}`),
       "",
     ].filter((line) => line !== "").join("\n"),

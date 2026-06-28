@@ -16,13 +16,14 @@ const { patchExistingTemplate, buildTemplate, missionHasAccelerationGate } = req
 const { resolveApplyTarget, backupTemplateOnce, readDungeonAuthority, writeDungeonAuthority } = require("../src/lib/sandbox");
 
 function parseArgs(argv) {
-  const args = { reset: false, target: "live" };
+  const args = { reset: false, target: "static" };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--reset") args.reset = true;
     else if (token === "--sandbox") args.target = "sandbox";
     else if (token === "--live") args.target = "live";
-    else if (token === "--target") args.target = String(argv[++i] || "live");
+    else if (token === "--static") args.target = "static";
+    else if (token === "--target") args.target = String(argv[++i] || "static");
     else if (token === "--wakka") args.wakka = String(argv[++i] || "");
     else if (token === "--url") args.url = String(argv[++i] || "");
     else if (token === "--eve-root") args.eveRoot = String(argv[++i] || "");
@@ -76,7 +77,7 @@ async function main() {
   let action;
   let backup = null;
   if (existing) {
-    if (applyTarget.target === "live") backup = await backupTemplateOnce(templateID, existing);
+    if (applyTarget.target !== "sandbox") backup = await backupTemplateOnce(templateID, existing);
     patchExistingTemplate(existing, mission);
     action = "patched existing";
   } else {
@@ -94,9 +95,11 @@ async function main() {
       `  rooms / groups / npc spawn lines: ${mission.rooms.length} / ${mission.rooms.reduce((n, r) => n + r.groups.length, 0)} / ${npcSpawns}`,
       backup ? `  backup of original: ${backup}` : "",
       "",
-      applyTarget.target === "live"
-        ? "Restart the EveJS server to load the change. To make any security agent serve it for a one-off test,\n  start the server with EVEJS_FORCE_MISSION_TEMPLATE=" + templateID
-        : `Next: verify a Level 1 agent spawns it:\n  npm run emu-test -- --wakka ${mission.wakka}`,
+      applyTarget.target === "static"
+        ? "Wrote the static-table source of truth. Build it into the runtime:\n  tools/DatabaseCreator/CreateDatabase.bat   (or: node tools/DatabaseCreator/database-creator.js --force)\n  Then start the server with EVEJS_FORCE_MISSION_TEMPLATE=" + templateID
+        : applyTarget.target === "live"
+          ? "Restart the EveJS server to load the change (throwaway -- wiped on the next --force build). For a one-off test,\n  start with EVEJS_FORCE_MISSION_TEMPLATE=" + templateID
+          : `Next: verify a Level 1 agent spawns it:\n  npm run emu-test -- --wakka ${mission.wakka}`,
       "",
     ].filter((l) => l !== "").join("\n"),
   );
