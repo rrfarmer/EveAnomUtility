@@ -2551,6 +2551,66 @@ async function importScrapedMission() {
   }
 }
 
+// --- TQ-log mission packs (decoded ground-truth) ---
+async function importMissionPack() {
+  const dir = $("#packInput").value.trim();
+  if (!dir) { showNotice("Enter the mission pack folder path."); return; }
+  $("#packMeta").textContent = "Loading pack...";
+  try {
+    const data = await api(`/api/pack?dir=${encodeURIComponent(dir)}`);
+    renderMissionPackSummary(data.summary, dir);
+  } catch (error) {
+    $("#packMeta").textContent = `Pack load failed: ${error.message}`;
+  }
+}
+
+function renderMissionPackSummary(summary, dir) {
+  const meta = $("#packMeta");
+  meta.textContent = "";
+  const triggers = Object.entries(summary.triggers || {})
+    .map(([trigger, count]) => `${count}x ${trigger}`).join(", ") || "none";
+  const facts = [
+    `Mission ${summary.missionID || "?"} · dungeon ${summary.dungeonID || "?"}`,
+    `Objective: ${summary.objectiveMode || "kill"}`,
+    `${summary.encounterCount} encounters (${triggers})`,
+    `${summary.explicitSpawnEntries} spawn entries · ${summary.gateCount} gate(s) · ${summary.environmentPropCount} props`,
+  ];
+  const wrap = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = summary.title;
+  const sub = document.createElement("div");
+  sub.className = "picker-sub";
+  sub.textContent = summary.templateID;
+  const list = document.createElement("ul");
+  list.className = "pack-facts";
+  for (const fact of facts) {
+    const li = document.createElement("li");
+    li.textContent = fact;
+    list.appendChild(li);
+  }
+  const applyBtn = document.createElement("button");
+  applyBtn.className = "primary";
+  applyBtn.textContent = "Apply pack to Live Server";
+  applyBtn.addEventListener("click", () => applyMissionPack(dir, summary));
+  wrap.append(title, sub, list, applyBtn);
+  meta.appendChild(wrap);
+}
+
+async function applyMissionPack(dir, summary) {
+  if (!window.confirm(`Write ${summary.templateID} to the LIVE EveJS server? The original template (if any) is backed up first.`)) return;
+  try {
+    const result = await api("/api/pack/apply", { method: "POST", body: { dir, target: "live" } });
+    const flags = [
+      summary.missionID ? `EVEJS_FORCE_MISSION_ID=${summary.missionID}` : null,
+      `EVEJS_FORCE_MISSION_TEMPLATE=${result.templateID}`,
+      summary.dungeonID ? `EVEJS_FORCE_MISSION_DUNGEON_ID=${summary.dungeonID}` : null,
+    ].filter(Boolean).join("  ");
+    showNotice(`Wrote ${result.templateID} to live (${result.action}). Restart EveJS with: ${flags}`);
+  } catch (error) {
+    showNotice(`Pack apply failed: ${error.message}`);
+  }
+}
+
 async function applyMissionToEmulator(target = "live") {
   const wakka = missionState.wakka || $("#missionTemplateIdInput").value.replace(/^eve-survival:/, "").trim();
   if (!wakka) { showNotice("This mission has no eve-survival source. Import from a wakka/URL first."); return; }
@@ -2651,6 +2711,8 @@ function bindEvents() {
   $("#missionSaveBtn").addEventListener("click", saveMission);
   $("#scrapeImportBtn").addEventListener("click", importScrapedMission);
   $("#scrapeInput").addEventListener("keydown", (event) => { if (event.key === "Enter") importScrapedMission(); });
+  $("#packImportBtn").addEventListener("click", importMissionPack);
+  $("#packInput").addEventListener("keydown", (event) => { if (event.key === "Enter") importMissionPack(); });
   $("#missionApplyEmuBtn").addEventListener("click", applyMissionToEmulator);
   $("#missionValidateBtn").addEventListener("click", validateMission);
   $("#missionCategorySelect").addEventListener("change", () => { missionState.missionType = $("#missionCategorySelect").value; renderMissionOverview(); });

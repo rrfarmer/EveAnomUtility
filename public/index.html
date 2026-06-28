@@ -325,6 +325,16 @@
                 <button class="secondary square" id="scrapeImportBtn" title="Scrape and load"><i data-lucide="download" class="icon"></i><span>Import</span></button>
               </div>
               <div class="picker-meta" id="scrapeMeta"></div>
+
+              <div class="section-heading">
+                <h3><i data-lucide="package" class="icon"></i><span>Import mission pack</span></h3>
+              </div>
+              <p class="section-hint">Load a decoded TQ-log mission pack (a folder) — the ground-truth source with exact spawns, trigger families, and objective. Review, then write its template to the live server.</p>
+              <div class="search-row">
+                <input id="packInput" placeholder="D:\path\to\13735-alluring-emanations">
+                <button class="secondary square" id="packImportBtn" title="Load pack"><i data-lucide="download" class="icon"></i><span>Load</span></button>
+              </div>
+              <div class="picker-meta" id="packMeta"></div>
             </aside>
 
             <section class="panel mission-authoring" aria-label="Mission authoring">
