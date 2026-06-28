@@ -59,6 +59,24 @@ function countSpawnEntries(rooms) {
   return { total, npc };
 }
 
+// Mining-mission hints (Plan C3 fallback): from authored mining params
+// (mission.mining = { oreTypeID|objectiveTypeID, quantity, rockCount? }) emit the special mineable
+// asteroids + the objective quantity that EveJS reads (populationHints.miningRocks/objectiveQuantity).
+// The per-rock yield is the objective spread across the rocks with a buffer so it's completable.
+function buildMiningHints(mission) {
+  const mining = mission && mission.mining;
+  const oreTypeID = mining ? Number(mining.oreTypeID || mining.objectiveTypeID) || 0 : 0;
+  const quantity = mining ? Math.max(0, Math.trunc(Number(mining.quantity) || 0)) : 0;
+  if (oreTypeID <= 0 || quantity <= 0) return {};
+  const rockCount = Math.max(1, Math.trunc(Number(mining.rockCount) || 8));
+  const perRock = Math.max(1, Math.ceil((quantity * 1.5) / rockCount));
+  return {
+    objectiveTypeID: oreTypeID,
+    objectiveQuantity: quantity,
+    miningRocks: [{ typeID: oreTypeID, count: rockCount, quantity: perRock }],
+  };
+}
+
 function buildPopulationHints(rooms, mission) {
   const counts = countSpawnEntries(rooms);
   return {
@@ -69,6 +87,7 @@ function buildPopulationHints(rooms, mission) {
     structureEntryCount: (mission.structures || []).length,
     objectiveHintCount: mission.blitz ? 1 : 0,
     triggerHintCount: 0,
+    ...buildMiningHints(mission),
   };
 }
 
