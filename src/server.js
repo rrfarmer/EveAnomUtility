@@ -397,7 +397,7 @@ async function routeApi(req, res, url) {
     try {
       const mission = await scrapeEveSurvival(input);
       const templateID = `eve-survival:${mission.wakka}`;
-      const target = body.target === "sandbox" ? "sandbox" : "live";
+      const target = body.target || "static";
       const applyTarget = await resolveApplyTarget({ target, reset: body.reset === true });
       const dungeon = await readDungeonAuthority(applyTarget.dataDir);
       dungeon.templatesByID = dungeon.templatesByID || {};
@@ -453,6 +453,42 @@ async function routeApi(req, res, url) {
     return true;
   }
 
+  // Save an edited dungeon template to the static-table source of truth (D4). Defaults to the static
+  // dir; a full CreateDatabase --force then builds it in (MISSION_MECHANICS_PLAN.md §2). Original
+  // backed up first.
+  if (req.method === "POST" && url.pathname === "/api/template/save") {
+    const body = await readBody(req);
+    const template = body.template;
+    const templateID = body.templateID || (template && template.templateID) || "";
+    if (!templateID || !template || typeof template !== "object") {
+      sendError(res, 400, "Provide { templateID, template }.");
+      return true;
+    }
+    try {
+      const applyTarget = await resolveApplyTarget({ target: body.target || "static" });
+      const dungeon = await readDungeonAuthority(applyTarget.dataDir);
+      dungeon.templatesByID = dungeon.templatesByID || {};
+      const existing = dungeon.templatesByID[templateID];
+      let backup = null;
+      if (existing) {
+        backup = await backupTemplateOnce(templateID, existing);
+      }
+      dungeon.templatesByID[templateID] = template;
+      await writeDungeonAuthority(applyTarget.dataDir, dungeon);
+      sendJson(res, 200, {
+        success: true,
+        templateID,
+        action: existing ? "overwrote" : "inserted",
+        target: applyTarget.target,
+        dataDir: applyTarget.dataDir,
+        backup,
+      });
+    } catch (error) {
+      sendError(res, 500, `Template save failed: ${error.message}`);
+    }
+    return true;
+  }
+
   // Load + summarize a decoded TQ-log mission pack from a local folder.
   if (req.method === "GET" && url.pathname === "/api/pack") {
     const dir = url.searchParams.get("dir") || "";
@@ -480,7 +516,7 @@ async function routeApi(req, res, url) {
     try {
       const pack = loadMissionPack(dir);
       const templateID = pack.dungeon.templateID;
-      const target = body.target === "sandbox" ? "sandbox" : "live";
+      const target = body.target || "static";
       const applyTarget = await resolveApplyTarget({ target, reset: body.reset === true });
       const dungeon = await readDungeonAuthority(applyTarget.dataDir);
       dungeon.templatesByID = dungeon.templatesByID || {};

@@ -9,7 +9,7 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 
-const { getLiveDataDir, resolveEveRoot, getDirectoryStats, WORKSPACE_ROOT } = require("./dataStore");
+const { getLiveDataDir, getStaticTableDir, resolveEveRoot, getDirectoryStats, WORKSPACE_ROOT } = require("./dataStore");
 
 function normalize(p) {
   return path.resolve(p).replace(/[\\/]+$/, "").toLowerCase();
@@ -68,15 +68,23 @@ async function writeDungeonAuthority(sandbox, data) {
 
 // Resolve where an apply should write: the live gameStore (default — the whole point of the tool) or a
 // disposable sandbox copy (opt-in, for safe testing).
-async function resolveApplyTarget({ target = "live", eveRoot, reset = false } = {}) {
+async function resolveApplyTarget({ target = "static", eveRoot, reset = false } = {}) {
   if (target === "sandbox") {
     const sb = await ensureSandbox({ eveRoot, reset });
     return { target: "sandbox", dataDir: sb.sandboxDataDir, copied: sb.copied };
   }
   const root = resolveEveRoot(eveRoot);
-  const dir = getLiveDataDir(root);
-  if (!fs.existsSync(dir)) throw new Error(`Live gameStore data dir not found: ${dir}`);
-  return { target: "live", dataDir: dir, copied: false };
+  if (target === "live") {
+    // Throwaway quick test: write the built runtime directly (wiped on the next --force build).
+    const dir = getLiveDataDir(root);
+    if (!fs.existsSync(dir)) throw new Error(`Live gameStore data dir not found: ${dir}`);
+    return { target: "live", dataDir: dir, copied: false };
+  }
+  // Default: write the DatabaseCreator static-table source of truth. A full `CreateDatabase --force`
+  // then builds it into the runtime (MISSION_MECHANICS_PLAN.md §2).
+  const dir = getStaticTableDir(root);
+  if (!fs.existsSync(dir)) throw new Error(`Static-table dir not found (run CreateDatabase once): ${dir}`);
+  return { target: "static", dataDir: dir, copied: false };
 }
 
 // Keep a one-time backup of an original template before the first overwrite, so live edits are reversible.
