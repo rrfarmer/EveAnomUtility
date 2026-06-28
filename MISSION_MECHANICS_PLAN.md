@@ -42,17 +42,17 @@ of tables are **"required static overrides"** — copied verbatim from the stati
 SDE — and these include **`dungeonAuthority`** (mission/site templates), **`missionAuthority`** (agent
 mission records), and **`npcLootTables`**.
 
-**Decision (correct, matches the design): the Utility writes to the STATIC source, not `_local`.**
+**Decision (correct, matches the design): the Utility writes to the STATIC source, not `_local`, and in
+development we FULL-BUILD every time.**
 - Authored mission templates → `tools/DatabaseCreator/staticTables/dungeonAuthority/data.json`.
 - Authored/new mission records → `tools/DatabaseCreator/staticTables/missionAuthority/data.json`.
-- `CreateDatabase --force` (or first run) then builds them into `_local`. Content is persistent and
-  version-controlled, and survives a rebuild (writing `_local` directly is wiped on `--force`).
-- **Fast-test caveat:** a full `--force` rebuilds every table (slow). Because `dungeonAuthority` is a pure
-  static override, a build convenience that **syncs just that one table** (static → `_local`) gives a fast
-  test loop without a full SDE rebuild — this is a build step, not the Utility writing `_local` as authoring.
+- To test, run a **full `CreateDatabase --force`** every time — it rebuilds `_local` from the static
+  tables. Content is persistent, version-controlled, and survives the rebuild.
+- **No incremental "little change table" sync, and the Utility never writes `_local` directly.** We are in
+  development; always do the full build. (Writing `_local` directly is wiped on `--force` anyway.)
 
-This supersedes the current `scrape-apply`/`pack-apply`/`/api/*apply`, which write `_local` directly (fine
-for throwaway iteration, but not the source of truth). See **Plan F**.
+This supersedes the current `scrape-apply`/`pack-apply`/`/api/*apply`, which write `_local` directly — migrate
+them to write the static tables (folded into Plan D, see D4).
 
 ## 3. Foundation already done
 
@@ -97,7 +97,10 @@ gate-by-default for combat. (Temp in-client test hooks: `EVEJS_FORCE_MISSION_ID/
 - **D2 Load any template** into the editor (`eve-survival:*`, `client-dungeon:*`, `authored.*`, packs).
 - **D3 Author-mechanics UI** — per-group trigger type+params, objectiveMode + objects, gates/connections
   (multi-pocket), mining asteroids.
-- **D4 Save correctly** — emit a valid EveJS template + pre-apply validation.
+- **D4 Save correctly to the STATIC tables** — emit a valid EveJS template and write it to
+  `staticTables/dungeonAuthority` (+ `missionAuthority` for new mission records), not `_local`; then a full
+  `CreateDatabase --force` picks it up (see §2). Migrate `scrape-apply`/`pack-apply`/`/api/*apply`/
+  `sandbox.resolveApplyTarget` off direct `_local` writes. Pre-apply validation (Plan E1).
 - **D5 Presets** — one-click "standard gate-first combat / proximity ambush / mine-N" so a scrape gets real
   mechanics fast (the non-log 99%).
 
@@ -107,14 +110,7 @@ gate-by-default for combat. (Temp in-client test hooks: `EVEJS_FORCE_MISSION_ID/
 - **E2 Extend `emu-test`** to drive each mission TYPE (gate combat, proximity, mining) offer→accept→
   materialize and assert mechanics headlessly.
 
-## 9. Plan F — Source-of-truth apply (Utility → static tables)
-
-Migrate the apply path per §2: write authored `dungeonAuthority` (and `missionAuthority`) to
-`tools/DatabaseCreator/staticTables/...` instead of `_local`. Add a fast single-table sync for testing.
-Keep the `_local` write only as an explicit "throwaway quick test" option. Update `scrape-apply`,
-`pack-apply`, `/api/*apply`, the Designer "Apply" buttons, `sandbox.resolveApplyTarget`, and TESTING.md.
-
-## 10. Agent coordination
+## 9. Agent coordination
 
 - **Rats agent:** done. **Loot-profiles agent:** spinning up now — **OK to proceed.** Loot owns
   `staticTables/npcLootTables` (separate static table) + loot/reward mechanics. Mission work owns
@@ -124,8 +120,8 @@ Keep the `_local` write only as an explicit "throwaway quick test" option. Updat
   sections are mission's) — non-overlapping hunks, git-mergeable. Missions **reference** loot by
   `lootProfile`/`lootTags`; loot **defines** them. Each agent stages only its own files/sections.
 
-## 11. Suggested loop order
+## 10. Suggested loop order
 
-`A1 → A2 → A3`, then `B1 → B3`, then `C`, then `D (D1/D2 first, then D3–D5)`, with `E` alongside and `F`
-folded into the first Utility-apply touch. `A4` waits on the loot/rats `npcService` work. See memory:
+`A1 → A2 → A3`, then `B1 → B3`, then `C`, then `D (D1/D2 first, then D3–D5; D4 writes static tables per §2)`,
+with `E` alongside. `A4` waits on the loot/rats `npcService` work. See memory:
 `mission-mechanics-roadmap`, `mission-trigger-taxonomy`, `evejs-mission-flow-fixes`, `mission-warp-rpc-path`.
