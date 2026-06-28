@@ -50,6 +50,10 @@ const {
   buildTemplate,
 } = require("./lib/eveSurvivalTemplate");
 const {
+  loadMissionPack,
+  summarizeMissionPack,
+} = require("./lib/missionPack");
+const {
   resolveApplyTarget,
   backupTemplateOnce,
   readDungeonAuthority,
@@ -413,6 +417,59 @@ async function routeApi(req, res, url) {
       });
     } catch (error) {
       sendError(res, 502, `Scrape/apply failed: ${error.message}`);
+    }
+    return true;
+  }
+
+  // Load + summarize a decoded TQ-log mission pack from a local folder.
+  if (req.method === "GET" && url.pathname === "/api/pack") {
+    const dir = url.searchParams.get("dir") || "";
+    if (!dir) {
+      sendError(res, 400, "Provide ?dir=<mission pack folder>.");
+      return true;
+    }
+    try {
+      const pack = loadMissionPack(dir);
+      sendJson(res, 200, { success: true, summary: summarizeMissionPack(pack), pack });
+    } catch (error) {
+      sendError(res, 400, `Pack load failed: ${error.message}`);
+    }
+    return true;
+  }
+
+  // Apply a mission pack's dungeon template to the EveJS gameStore (live by default; original backed up).
+  if (req.method === "POST" && url.pathname === "/api/pack/apply") {
+    const body = await readBody(req);
+    const dir = body.dir || "";
+    if (!dir) {
+      sendError(res, 400, "Provide { dir }.");
+      return true;
+    }
+    try {
+      const pack = loadMissionPack(dir);
+      const templateID = pack.dungeon.templateID;
+      const target = body.target === "sandbox" ? "sandbox" : "live";
+      const applyTarget = await resolveApplyTarget({ target, reset: body.reset === true });
+      const dungeon = await readDungeonAuthority(applyTarget.dataDir);
+      dungeon.templatesByID = dungeon.templatesByID || {};
+      const existing = dungeon.templatesByID[templateID];
+      let backup = null;
+      if (existing && applyTarget.target === "live") {
+        backup = await backupTemplateOnce(templateID, existing);
+      }
+      dungeon.templatesByID[templateID] = pack.dungeon;
+      await writeDungeonAuthority(applyTarget.dataDir, dungeon);
+      sendJson(res, 200, {
+        success: true,
+        templateID,
+        action: existing ? "overwrote" : "inserted",
+        target: applyTarget.target,
+        dataDir: applyTarget.dataDir,
+        backup,
+        summary: summarizeMissionPack(pack),
+      });
+    } catch (error) {
+      sendError(res, 400, `Pack apply failed: ${error.message}`);
     }
     return true;
   }
