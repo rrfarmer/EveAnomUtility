@@ -58,6 +58,9 @@ const {
   summarizeMissionPack,
 } = require("./lib/missionPack");
 const {
+  validateMissionTemplate,
+} = require("./lib/missionTemplateValidator");
+const {
   resolveApplyTarget,
   backupTemplateOnce,
   readDungeonAuthority,
@@ -464,6 +467,11 @@ async function routeApi(req, res, url) {
       sendError(res, 400, "Provide { templateID, template }.");
       return true;
     }
+    const validation = validateMissionTemplate(template);
+    if (validation.errors.length > 0) {
+      sendError(res, 400, `Template is invalid: ${validation.errors.join("; ")}`, { validation });
+      return true;
+    }
     try {
       const applyTarget = await resolveApplyTarget({ target: body.target || "static" });
       const dungeon = await readDungeonAuthority(applyTarget.dataDir);
@@ -482,6 +490,7 @@ async function routeApi(req, res, url) {
         target: applyTarget.target,
         dataDir: applyTarget.dataDir,
         backup,
+        warnings: validation.warnings,
       });
     } catch (error) {
       sendError(res, 500, `Template save failed: ${error.message}`);
