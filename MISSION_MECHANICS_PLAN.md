@@ -125,3 +125,15 @@ gate-by-default for combat. (Temp in-client test hooks: `EVEJS_FORCE_MISSION_ID/
 `A1 → A2 → A3`, then `B1 → B3`, then `C`, then `D (D1/D2 first, then D3–D5; D4 writes static tables per §2)`,
 with `E` alongside. `A4` waits on the loot/rats `npcService` work. See memory:
 `mission-mechanics-roadmap`, `mission-trigger-taxonomy`, `evejs-mission-flow-fixes`, `mission-warp-rpc-path`.
+
+## Status — loop session 2026-06-28 (all commits no-co-author)
+
+Plans **A, B, C, D, E essentially complete.**
+
+- **A (combat triggers + fallback ladder):** A1 per-room fallback ladder `7c60e12d`, A2 timer trigger `8ed84af2`, A3 staggered proximity waves `3b014ce2` (eve.js). **A4** exact per-NPC spawnEntries fidelity — **blocked on the loot/rats `npcService` rework**. **A5** gate-warp animation — **needs in-client verify**.
+- **B (objectives):** B1 objective hook `d01787f8`, B2 setter `markInstanceObjectiveSatisfied` `887e2b6e` (eve.js). B3 turn-in already handled by the agent flow; B2 interaction-detectors (hack/approach) deferred (low value, framework ready).
+- **C (mining):** C1 mineable-rock materialization `b3a932b7`, C2 mining-quantity completion `71b07fab` (eve.js), C3 builder hints `21ab563` (Utility). **Needs in-client verify** of actual mining behavior.
+- **D (Utility load/edit/save + static apply):** D2 `e2a9f73`, D4 server `6bba75c` + CLIs `8008d52`, D3 load/save UI `d9bffbf`, TESTING `316be92`. Apply/save now write the static-table source of truth by default; full `CreateDatabase --force` to test. D1/D3 deep in-editor per-field mechanics editing is a follow-up (load+review+save round-trip works today).
+- **E (validation + harness):** E1 `missionTemplateValidator` `4046626` (wired into save + apply CLIs `bc16540`), E2 `npm run mission-check` per-type assertions `40fa943`.
+
+**Next:** in-client verification (A5 gate warp, C mining), then A4 once the loot/rats `npcService` work lands, then optional deep in-editor mechanics editing (D1/D3).
