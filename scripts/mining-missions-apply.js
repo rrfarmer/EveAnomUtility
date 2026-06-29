@@ -34,6 +34,23 @@ const { resolveEveRoot, getLiveDataDir } = require("../src/lib/dataStore");
 const MINING_TEMPLATE = "BasicMiningMission";
 const ORE_CATEGORY_ID = 25; // Asteroid (ore + mission ice); gas clouds are categoryID 2 (skipped).
 
+// Authoritative mission LEVEL by dungeon resolvedName (from the canonical mining-mission table). Only the
+// 5 Level-1 missions are the verified, in-scope set; the rest are a kept HEAD-START at their true level
+// (peaceful single-rock baseline -- some higher-level missions may really have ambushes/multi-rock layouts).
+// Names not in the table (faction variants / the "(N of 5)" storyline arc) get level null = unverified.
+const LEVEL_BY_NAME = {
+  // Level 1 (the only verified in-scope set)
+  "Starting Simple": 1, "Asteroid Catastrophe": 1, "Burnt Traces": 1, "Mercium Experiments": 1, "Bountiful Banidine": 1,
+  // Level 2
+  "Claimjumpers": 2, "Mercium Belt": 2, "Down and Dirty": 2, "Unknown Events": 2, "Understanding Augumene": 2, "Data Mining": 2,
+  // Level 3
+  "Beware They Live": 3, "Persistent Pests": 3, "Drone Distribution": 3, "Pile of Pithix": 3,
+  "Coming 'Round the Mountain": 3, "A Better World": 3, "Stay Frosty": 3,
+  // Level 4
+  "Mother Lode": 4, "Ice Installation": 4, "Feeding the Giant": 4, "Arisite Envy": 4,
+  "Not Gneiss at All": 4, "Cheap Chills": 4, "Geodite and Gemology": 4,
+};
+
 // Exact retail asteroid dunPositions decoded from the TQ Mining logs (DoBallsAdded slimItem reprs),
 // keyed by dungeonID. Other dungeons fall back to procedural placement.
 const LOG_POSITIONS = {
@@ -101,6 +118,14 @@ function applyMiningHints(template, spec) {
   ph.source = "mining_mission_authored";
   ph.siteFamily = "mining";
   ph.siteKind = "mining";
+  // True mission level (1 = verified in-scope; 2-4 = kept head-start; null = unverified variant/storyline).
+  const level = LEVEL_BY_NAME[normalizeText(template.resolvedName)];
+  ph.missionLevel = level || null;
+  return level || null;
+}
+
+function normalizeText(value) {
+  return String(value || "").trim();
 }
 
 async function main() {
@@ -125,16 +150,22 @@ async function main() {
     const templateID = `client-dungeon:${spec.dungeonID}`;
     const template = dungeon.templatesByID[templateID];
     if (!template) { skippedNoTemplate.push(spec); continue; }
-    applyMiningHints(template, spec);
-    applied.push({ ...spec, templateID, exact: Boolean(LOG_POSITIONS[spec.dungeonID]) });
+    const level = applyMiningHints(template, spec);
+    applied.push({ ...spec, templateID, exact: Boolean(LOG_POSITIONS[spec.dungeonID]), level });
   }
 
   await writeDungeonAuthority(applyTarget.dataDir, dungeon);
 
   process.stdout.write(`\nApplied ${applied.length} ore mining dungeons to ${applyTarget.target.toUpperCase()} (${applied.filter((a) => a.exact).length} with exact log positions)\n`);
-  process.stdout.write(`  data dir: ${applyTarget.dataDir}\n\n`);
-  for (const a of applied) {
-    process.stdout.write(`  OK  ${a.templateID.padEnd(20)} mine ${String(a.quantity).padStart(6)} ${a.oreName.padEnd(18)} ${a.exact ? "[exact pos]" : "[procedural]"}  ${a.name}\n`);
+  process.stdout.write(`  data dir: ${applyTarget.dataDir}\n`);
+  const levelLabel = (lvl) => (lvl ? `LEVEL ${lvl}${lvl === 1 ? " (verified, in-scope)" : " (head-start)"}` : "LEVEL ? (unverified variant/storyline)");
+  for (const lvl of [1, 2, 3, 4, null]) {
+    const group = applied.filter((a) => (a.level || null) === lvl);
+    if (!group.length) continue;
+    process.stdout.write(`\n  ${levelLabel(lvl)} — ${group.length}:\n`);
+    for (const a of group) {
+      process.stdout.write(`    ${a.templateID.padEnd(20)} mine ${String(a.quantity).padStart(6)} ${a.oreName.padEnd(18)} ${a.exact ? "[exact pos]" : "[procedural]"}  ${a.name}\n`);
+    }
   }
   if (skippedGas.length) {
     process.stdout.write(`\n  Skipped ${skippedGas.length} GAS (Cytoserocin) missions -- need gas-harvesting mechanics:\n`);
