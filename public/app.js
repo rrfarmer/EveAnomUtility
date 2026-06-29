@@ -2797,9 +2797,28 @@ function renderTemplateSummary(template, source) {
   const sub = document.createElement("div"); sub.className = "picker-sub"; sub.textContent = s.templateID;
   const list = document.createElement("ul"); list.className = "pack-facts";
   for (const f of facts) { const li = document.createElement("li"); li.textContent = f; list.appendChild(li); }
+  const editorLabel = document.createElement("label");
+  editorLabel.className = "notes-label";
+  const editorTitle = document.createElement("span");
+  editorTitle.textContent = "Template JSON";
+  const editor = document.createElement("textarea");
+  editor.rows = 14;
+  editor.spellcheck = false;
+  editor.value = JSON.stringify(template, null, 2);
+  editorLabel.append(editorTitle, editor);
   const saveBtn = document.createElement("button"); saveBtn.className = "primary"; saveBtn.textContent = "Save to static tables";
-  saveBtn.addEventListener("click", () => saveTemplate(template));
-  wrap.append(title, sub, list, saveBtn);
+  saveBtn.addEventListener("click", () => {
+    let editedTemplate;
+    try {
+      editedTemplate = parseObjectJsonField(editor, "Template JSON");
+      editor.value = JSON.stringify(editedTemplate, null, 2);
+    } catch (error) {
+      showNotice(error.message);
+      return;
+    }
+    saveTemplate(editedTemplate);
+  });
+  wrap.append(title, sub, list, editorLabel, saveBtn);
   meta.appendChild(wrap);
 }
 
@@ -2813,19 +2832,27 @@ async function saveTemplate(template) {
   }
 }
 
-async function applyMissionToEmulator(target = "static") {
-  const wakka = missionState.wakka || $("#missionTemplateIdInput").value.replace(/^eve-survival:/, "").trim();
-  if (!wakka) { showNotice("This mission has no eve-survival source. Import from a wakka/URL first."); return; }
-  const where = target === "sandbox" ? "the test sandbox" : "EveJS static tables";
-  if (!window.confirm(`Scrape eve-survival:${wakka} and write it to ${where}? The original template is backed up first.`)) return;
+async function writeCurrentMissionToStaticTables() {
+  if (!missionState.active) return;
+  const overlay = missionOverlayFromForm();
+  if (!overlay.templateID) {
+    showNotice("Enter a template ID before writing static tables.");
+    return;
+  }
+  if (!window.confirm(`Save this draft and write ${overlay.templateID} to EveJS static tables? Build with CreateDatabase --force afterward.`)) return;
   try {
-    const result = await api("/api/scrape/apply", { method: "POST", body: { wakka, target } });
-    const note = result.target === "static"
-      ? `Wrote ${result.templateID} to static tables. Run CreateDatabase --force to build it.`
-      : `${result.action} ${result.templateID} in the sandbox. Verify: npm run emu-test -- --wakka ${wakka}`;
-    showNotice(note);
+    const saved = await api("/api/overlays", { method: "POST", body: overlay });
+    missionState.loadedOverlayId = saved.overlay.id;
+    renderMissionValidation(saved.validation);
+    const result = await api("/api/template-pack/apply-static", {
+      method: "POST",
+      body: { overlayIDs: [saved.overlay.id] },
+    });
+    await loadOverlays();
+    await loadStatus();
+    showNotice(`Wrote ${result.applied.length} template(s) and ${(result.appliedMissionRecords || []).length} mission record(s) to static tables. Run CreateDatabase --force to build them.`);
   } catch (error) {
-    showNotice(`Apply failed: ${error.message}`);
+    showNotice(`Static write failed: ${error.message}`);
   }
 }
 
@@ -2933,7 +2960,7 @@ function bindEvents() {
   $("#packInput").addEventListener("keydown", (event) => { if (event.key === "Enter") importMissionPack(); });
   $("#templateLoadBtn").addEventListener("click", loadTemplateById);
   $("#templateInput").addEventListener("keydown", (event) => { if (event.key === "Enter") loadTemplateById(); });
-  $("#missionApplyEmuBtn").addEventListener("click", applyMissionToEmulator);
+  $("#missionApplyEmuBtn").addEventListener("click", writeCurrentMissionToStaticTables);
   $("#missionValidateBtn").addEventListener("click", validateMission);
   $("#missionCategorySelect").addEventListener("change", () => { missionState.missionType = $("#missionCategorySelect").value; renderMission(); });
   $("#missionTitleInput").addEventListener("input", renderMissionOverview);
