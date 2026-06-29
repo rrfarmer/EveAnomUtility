@@ -341,7 +341,11 @@ async function routeApi(req, res, url) {
 
   if (req.method === "POST" && url.pathname === "/api/template-pack/apply-static") {
     try {
-      const pack = await buildTemplatePack({ write: true });
+      const body = await readBody(req);
+      const pack = await buildTemplatePack({
+        write: true,
+        overlayIDs: Array.isArray(body.overlayIDs) ? body.overlayIDs : [],
+      });
       const applyTarget = await resolveApplyTarget({ target: "static" });
       const dungeon = await readDungeonAuthority(applyTarget.dataDir);
       dungeon.templatesByID = dungeon.templatesByID || {};

@@ -724,7 +724,13 @@ async function buildTemplatePack(options = {}) {
     listOverlays(),
     listAuthoredLootTables(),
   ]);
+  const requestedOverlayIDs = new Set(
+    (Array.isArray(options.overlayIDs) ? options.overlayIDs : [])
+      .map((id) => text(id))
+      .filter(Boolean),
+  );
   const selected = overlays.filter((overlay) => {
+    if (requestedOverlayIDs.size > 0 && !requestedOverlayIDs.has(text(overlay.id))) return false;
     if (options.includeDrafts === false && overlay.status === "draft") return false;
     return validateOverlay(overlay).ok;
   });
