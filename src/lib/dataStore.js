@@ -195,9 +195,11 @@ async function getStatus() {
   const eveRoot = resolveEveRoot();
   const liveDataDir = getLiveDataDir(eveRoot);
   const sourceDataDir = getSourceDataDir(eveRoot);
-  const [liveStats, cloneStats] = await Promise.all([
+  const staticTableDir = getStaticTableDir(eveRoot);
+  const [liveStats, cloneStats, staticStats] = await Promise.all([
     getDirectoryStats(liveDataDir),
     getDirectoryStats(CLONE_DATA_DIR),
+    getDirectoryStats(staticTableDir),
   ]);
   return {
     utilityRoot: UTILITY_ROOT,
@@ -205,11 +207,15 @@ async function getStatus() {
     eveRoot,
     liveDataDir,
     sourceDataDir,
+    staticTableDir,
     cloneDataDir: CLONE_DATA_DIR,
     overlayDir: OVERLAY_DIR,
     liveStats,
     cloneStats,
-    activeReadMode: cloneStats.exists ? "clone" : "live-read-only",
+    staticStats,
+    activeReadMode: staticStats.exists
+      ? `static-authorities+${cloneStats.exists ? "clone" : "live-read-only"}`
+      : cloneStats.exists ? "clone" : "live-read-only",
     liveWritesAllowed: false,
   };
 }

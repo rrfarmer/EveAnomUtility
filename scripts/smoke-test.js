@@ -159,6 +159,58 @@ async function main() {
     if (parsedCourierMissionTemplates.templates.length !== 0) {
       throw new Error(`courier missions should not expose dungeon templates: ${courierMissionTemplates.body}`);
     }
+    const miningMissions = await request(server, "/api/missions?missionType=mining&q=Starting%20Simple&limit=5");
+    if (miningMissions.statusCode !== 200) throw new Error(`/api/missions mining failed: ${miningMissions.body}`);
+    const parsedMiningMissions = JSON.parse(miningMissions.body);
+    const startingSimple = parsedMiningMissions.missions.find((mission) => mission.dungeonID === 2449);
+    if (!startingSimple || startingSimple.linkedTemplateID !== "client-dungeon:2449") {
+      throw new Error(`Starting Simple mining mission did not resolve to client-dungeon:2449: ${miningMissions.body}`);
+    }
+    const miningDraft = await request(server, `/api/mission-security/draft?missionID=${startingSimple.missionID}`);
+    if (miningDraft.statusCode !== 200) throw new Error(`/api/mission-security/draft mining failed: ${miningDraft.body}`);
+    const parsedMiningDraft = JSON.parse(miningDraft.body);
+    if (
+      !parsedMiningDraft.draft ||
+      parsedMiningDraft.draft.missionType !== "mining" ||
+      parsedMiningDraft.draft.objectiveTypeID !== 28617 ||
+      parsedMiningDraft.draft.objectiveQuantity !== 20000 ||
+      parsedMiningDraft.draft.miningRocks[0].dunObjectID !== 867587 ||
+      parsedMiningDraft.draft.environmentProps.length !== 14
+    ) {
+      throw new Error(`Starting Simple mining draft lost exact data: ${miningDraft.body}`);
+    }
+    const miningValidation = await request(server, "/api/validate", {
+      method: "POST",
+      body: parsedMiningDraft.draft,
+    });
+    if (miningValidation.statusCode !== 200) throw new Error(`/api/validate mining draft failed: ${miningValidation.body}`);
+    if (!JSON.parse(miningValidation.body).validation.ok) {
+      throw new Error(`expected mining draft validation ok: ${miningValidation.body}`);
+    }
+    const miningOverlay = {
+      ...parsedMiningDraft.draft,
+      id: `overlay_smoke_mining_${Date.now()}`,
+      templateID: `admin:smoke:mining-starting-simple:${Date.now()}`,
+      title: "Smoke Mining Starting Simple",
+    };
+    const savedMining = await request(server, "/api/overlays", {
+      method: "POST",
+      body: miningOverlay,
+    });
+    if (savedMining.statusCode !== 200) throw new Error(`/api/overlays save Mining failed: ${savedMining.body}`);
+    const miningPack = await request(server, "/api/template-pack");
+    if (miningPack.statusCode !== 200) throw new Error(`/api/template-pack Mining failed: ${miningPack.body}`);
+    const generatedMiningTemplate = JSON.parse(miningPack.body).pack.templates.find((template) => template.templateID === miningOverlay.templateID);
+    if (
+      !generatedMiningTemplate ||
+      generatedMiningTemplate.populationHints.objectiveTypeID !== 28617 ||
+      generatedMiningTemplate.populationHints.miningRocks[0].dunObjectID !== 867587 ||
+      generatedMiningTemplate.populationHints.environmentProps.length !== 14
+    ) {
+      throw new Error(`Mining draft did not emit exact template data: ${miningPack.body}`);
+    }
+    const miningOverlayDelete = await request(server, `/api/overlays/${encodeURIComponent(miningOverlay.id)}`, { method: "DELETE" });
+    if (miningOverlayDelete.statusCode !== 200) throw new Error(`/api/overlays delete Mining failed: ${miningOverlayDelete.body}`);
     const validation = await request(server, "/api/validate", {
       method: "POST",
       body: {

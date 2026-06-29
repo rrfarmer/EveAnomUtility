@@ -338,6 +338,45 @@ async function routeApi(req, res, url) {
     return true;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/template-pack/apply-static") {
+    try {
+      const pack = await buildTemplatePack({ write: true });
+      const applyTarget = await resolveApplyTarget({ target: "static" });
+      const dungeon = await readDungeonAuthority(applyTarget.dataDir);
+      dungeon.templatesByID = dungeon.templatesByID || {};
+      const applied = [];
+      const backups = [];
+      for (const template of pack.templates || []) {
+        if (!template || !template.templateID) {
+          continue;
+        }
+        const existing = dungeon.templatesByID[template.templateID];
+        const backup = existing ? await backupTemplateOnce(template.templateID, existing) : null;
+        dungeon.templatesByID[template.templateID] = template;
+        applied.push({
+          templateID: template.templateID,
+          action: existing ? "overwrote" : "inserted",
+          backup,
+        });
+        if (backup) backups.push(backup);
+      }
+      await writeDungeonAuthority(applyTarget.dataDir, dungeon);
+      getCatalog({ force: true });
+      sendJson(res, 200, {
+        success: true,
+        target: applyTarget.target,
+        dataDir: applyTarget.dataDir,
+        applied,
+        backupCount: backups.length,
+        outputPath: PACK_FILE,
+        pack,
+      });
+    } catch (error) {
+      sendError(res, 500, `Template pack static apply failed: ${error.message}`);
+    }
+    return true;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/overlays") {
     const result = await saveOverlay(await readBody(req));
     sendJson(res, result.success ? 200 : 422, result);
@@ -389,7 +428,7 @@ async function routeApi(req, res, url) {
     return true;
   }
 
-  // Scrape + apply to the EveJS gameStore sandbox (never live).
+  // Scrape + apply to the EveJS static-table source of truth by default.
   if (req.method === "POST" && url.pathname === "/api/scrape/apply") {
     const body = await readBody(req);
     const input = body.url || body.wakka || "";
@@ -407,7 +446,7 @@ async function routeApi(req, res, url) {
       const existing = dungeon.templatesByID[templateID];
       let backup = null;
       if (existing) {
-        if (applyTarget.target === "live") backup = await backupTemplateOnce(templateID, existing);
+        if (applyTarget.target !== "sandbox") backup = await backupTemplateOnce(templateID, existing);
         patchExistingTemplate(existing, mission);
       } else {
         dungeon.templatesByID[templateID] = buildTemplate(mission);
@@ -514,7 +553,7 @@ async function routeApi(req, res, url) {
     return true;
   }
 
-  // Apply a mission pack's dungeon template to the EveJS gameStore (live by default; original backed up).
+  // Apply a mission pack's dungeon template to the EveJS static-table source of truth by default.
   if (req.method === "POST" && url.pathname === "/api/pack/apply") {
     const body = await readBody(req);
     const dir = body.dir || "";
@@ -531,7 +570,7 @@ async function routeApi(req, res, url) {
       dungeon.templatesByID = dungeon.templatesByID || {};
       const existing = dungeon.templatesByID[templateID];
       let backup = null;
-      if (existing && applyTarget.target === "live") {
+      if (existing && applyTarget.target !== "sandbox") {
         backup = await backupTemplateOnce(templateID, existing);
       }
       dungeon.templatesByID[templateID] = pack.dungeon;

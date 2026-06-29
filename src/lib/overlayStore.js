@@ -98,6 +98,10 @@ function sanitizeOverlay(input = {}) {
     gates: Array.isArray(input.gates) ? input.gates : [],
     encounters: Array.isArray(input.encounters) ? input.encounters : [],
     resources: Array.isArray(input.resources) ? input.resources : [],
+    miningRocks: Array.isArray(input.miningRocks) ? input.miningRocks : [],
+    environmentProps: Array.isArray(input.environmentProps) ? input.environmentProps : [],
+    objectiveTypeID: Number(input.objectiveTypeID) || 0,
+    objectiveQuantity: Number(input.objectiveQuantity) || 0,
     npcOverrides: Array.isArray(input.npcOverrides) ? input.npcOverrides : [],
     lootTables: Array.isArray(input.lootTables) ? input.lootTables : [],
     completion: input.completion && typeof input.completion === "object"

@@ -374,6 +374,59 @@ function validateOverlay(input = {}) {
       });
     }
   }
+  if (contentFamily === "mission" && missionType === "mining") {
+    const objectiveTypeID = toInt(input.objectiveTypeID || input.completion && input.completion.objectiveTypeID, 0);
+    const objectiveQuantity = toNumber(input.objectiveQuantity || input.completion && input.completion.objectiveQuantity, 0);
+    if (!objectiveTypeID || !catalog.itemTypesByID.has(objectiveTypeID)) {
+      findings.push({
+        level: "error",
+        path: "$.objectiveTypeID",
+        message: "Mining mission objectiveTypeID must be an existing client/SDE type ID.",
+      });
+    }
+    if (objectiveQuantity <= 0) {
+      findings.push({
+        level: "error",
+        path: "$.objectiveQuantity",
+        message: "Mining mission objectiveQuantity must be greater than zero.",
+      });
+    }
+    const miningRocks = Array.isArray(input.miningRocks) ? input.miningRocks : [];
+    if (miningRocks.length === 0) {
+      findings.push({
+        level: "error",
+        path: "$.miningRocks",
+        message: "Mining missions need at least one mining rock.",
+      });
+    }
+    miningRocks.forEach((rock, index) => {
+      const typeID = toInt(rock && (rock.oreTypeID || rock.typeID || rock.objectiveTypeID), 0);
+      if (!typeID || !catalog.itemTypesByID.has(typeID)) {
+        findings.push({
+          level: "error",
+          path: `$.miningRocks[${index}]`,
+          message: "Mining rock needs an existing ore typeID/oreTypeID/objectiveTypeID.",
+        });
+      }
+      if (toNumber(rock && rock.quantity, 0) <= 0) {
+        findings.push({
+          level: "error",
+          path: `$.miningRocks[${index}].quantity`,
+          message: "Mining rock quantity must be greater than zero.",
+        });
+      }
+    });
+    (Array.isArray(input.environmentProps) ? input.environmentProps : []).forEach((prop, index) => {
+      const typeID = toInt(prop && prop.typeID, 0);
+      if (!typeID || !catalog.itemTypesByID.has(typeID)) {
+        findings.push({
+          level: "error",
+          path: `$.environmentProps[${index}].typeID`,
+          message: "Environment prop typeID must be an existing client/SDE type ID.",
+        });
+      }
+    });
+  }
 
   const resources = Array.isArray(input.resources) ? input.resources : [];
   if (contentFamily === "resource" && resources.length === 0) {

@@ -19,7 +19,7 @@
  * A L1 mining agent offers these naturally (no force flag) -- they share the BasicMiningMission template,
  * and listMissionIDsForAgent expands a preferred mining mission to all missions of that template.
  *
- * See memory l1-mining-missions. Usage: node scripts/mining-missions-apply.js [--sandbox|--live|--static]
+ * See memory l1-mining-missions. Usage: node scripts/mining-missions-apply.js [--sandbox|--live|--static] [--all]
  */
 
 const fs = require("fs");
@@ -29,10 +29,11 @@ const {
   readDungeonAuthority,
   writeDungeonAuthority,
 } = require("../src/lib/sandbox");
-const { resolveEveRoot, getLiveDataDir } = require("../src/lib/dataStore");
+const { resolveEveRoot, getLiveDataDir, getStaticTableDir } = require("../src/lib/dataStore");
 
 const MINING_TEMPLATE = "BasicMiningMission";
 const ORE_CATEGORY_ID = 25; // Asteroid (ore + mission ice); gas clouds are categoryID 2 (skipped).
+const VERIFIED_L1_DUNGEON_IDS = new Set([2449, 2450, 2451, 2454, 2456]);
 
 // Authoritative mission LEVEL by dungeon resolvedName (from the canonical mining-mission table). Only the
 // 5 Level-1 missions are the verified, in-scope set; the rest are a kept HEAD-START at their true level
@@ -59,6 +60,21 @@ const LOG_POSITIONS = {
   2450: { x: -17288.51171875, y: -14128.806640625,    z: -1341.41943359375 },  // Asteroid Catastrophe
   2451: { x: 19497.19140625,  y: -8388.244140625,     z: 6668.2099609375 },     // Burnt Traces
   2454: { x: 6068.9169921875, y: -1699.62939453125,   z: 2848.41455078125 },    // Mercium Experiments
+};
+
+// Exact dungeon-object IDs of the special-ore asteroid (from the TQ logs' slimItem reprs), keyed by
+// dungeonID. The retail client needs a dunObjectID to render the ore-type asteroid as a dungeon object;
+// without it the client crashes on approach (integer divide-by-zero on a modelless asteroid).
+const LOG_DUN_OBJECT_IDS = {
+  2449: 867587, // Starting Simple
+  2456: 886465, // Bountiful Banidine
+  2450: 867589, // Asteroid Catastrophe
+  2451: 867528, // Burnt Traces
+  2454: 867621, // Mercium Experiments
+};
+
+const LOG_ROTATIONS = {
+  2456: [267.1401062011719, -59.988616943359375, 0.000013655673683388159],
 };
 
 function loadJson(file) {
@@ -105,13 +121,19 @@ function applyMiningHints(template, spec) {
   const rock = { oreTypeID: spec.oreTypeID, count: 1, quantity: spec.quantity, label: spec.oreName };
   const pos = LOG_POSITIONS[spec.dungeonID];
   if (pos) rock.positionOffset = { x: pos.x, y: pos.y, z: pos.z };
+  const dunObjectID = LOG_DUN_OBJECT_IDS[spec.dungeonID];
+  if (dunObjectID) rock.dunObjectID = dunObjectID;
+  const dunRotation = LOG_ROTATIONS[spec.dungeonID];
+  if (dunRotation) rock.dunRotation = dunRotation;
   ph.miningRocks = [rock];
   ph.objectiveTypeID = spec.oreTypeID;
   ph.objectiveQuantity = spec.quantity;
   ph.completeObjectiveOnEncounterClear = false;
   ph.encounter = null;
   ph.encounters = [];
-  ph.environmentProps = [];
+  const hasExactEnvironmentProps = Array.isArray(ph.environmentProps) &&
+    ph.environmentProps.some((prop) => prop && prop.exact === true);
+  if (!hasExactEnvironmentProps) ph.environmentProps = [];
   ph.containers = [];
   ph.hazards = [];
   ph.lootProfiles = [];
@@ -131,11 +153,17 @@ function normalizeText(value) {
 async function main() {
   const argv = process.argv.slice(2);
   const target = argv.includes("--sandbox") ? "sandbox" : argv.includes("--live") ? "live" : "static";
+  const applyAllMiningDungeons = argv.includes("--all");
 
   const eveRoot = resolveEveRoot();
   const liveDir = getLiveDataDir(eveRoot);
+  const staticDir = getStaticTableDir(eveRoot);
+  const authorityReadDir = fs.existsSync(path.join(staticDir, "missionAuthority", "data.json"))
+    ? staticDir
+    : liveDir;
   const { cat, name } = buildTypeCategoryMap(liveDir);
-  const dungeons = collectMiningDungeons(liveDir);
+  const dungeons = collectMiningDungeons(authorityReadDir)
+    .filter((spec) => applyAllMiningDungeons || VERIFIED_L1_DUNGEON_IDS.has(spec.dungeonID));
 
   const applyTarget = await resolveApplyTarget({ target });
   const dungeon = await readDungeonAuthority(applyTarget.dataDir);
@@ -158,6 +186,10 @@ async function main() {
 
   process.stdout.write(`\nApplied ${applied.length} ore mining dungeons to ${applyTarget.target.toUpperCase()} (${applied.filter((a) => a.exact).length} with exact log positions)\n`);
   process.stdout.write(`  data dir: ${applyTarget.dataDir}\n`);
+  process.stdout.write(`  missionAuthority read dir: ${authorityReadDir}\n`);
+  if (!applyAllMiningDungeons) {
+    process.stdout.write("  scope: verified L1 mining dungeons only (pass --all for the old broad enrichment pass)\n");
+  }
   const levelLabel = (lvl) => (lvl ? `LEVEL ${lvl}${lvl === 1 ? " (verified, in-scope)" : " (head-start)"}` : "LEVEL ? (unverified variant/storyline)");
   for (const lvl of [1, 2, 3, 4, null]) {
     const group = applied.filter((a) => (a.level || null) === lvl);

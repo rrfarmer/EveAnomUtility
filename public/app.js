@@ -328,7 +328,7 @@ function setScopeMode(scopeMode) {
 
 const VIEW_META = {
   builder: { title: "Site Builder", eyebrow: "Server-side template authoring" },
-  missions: { title: "Mission Designer", eyebrow: "Agent mission combat authoring" },
+  missions: { title: "Mission Designer", eyebrow: "Agent mission authoring" },
   systems: { title: "Systems", eyebrow: "Solar system reference" },
   npcs: { title: "NPCs", eyebrow: "Server-side NPC catalog" },
   loot: { title: "Loot Profiles", eyebrow: "Reusable NPC loot tables" },
@@ -1833,6 +1833,10 @@ const missionState = {
   rooms: [],
   gates: [],
   encounters: [],
+  miningRocks: [],
+  environmentProps: [],
+  objectiveTypeID: 0,
+  objectiveQuantity: 0,
   lootTables: [],
   completion: null,
   missionSecurity: null,
@@ -1850,6 +1854,10 @@ function blankMissionState() {
   missionState.rooms = [];
   missionState.gates = [];
   missionState.encounters = [];
+  missionState.miningRocks = [];
+  missionState.environmentProps = [];
+  missionState.objectiveTypeID = 0;
+  missionState.objectiveQuantity = 0;
   missionState.lootTables = [];
   missionState.completion = null;
   missionState.missionSecurity = null;
@@ -1883,6 +1891,10 @@ function missionOverlayFromForm() {
     rooms: missionState.rooms,
     gates: missionState.gates,
     encounters: missionState.encounters,
+    miningRocks: missionState.miningRocks,
+    environmentProps: missionState.environmentProps,
+    objectiveTypeID: Number(missionState.objectiveTypeID) || 0,
+    objectiveQuantity: Number(missionState.objectiveQuantity) || 0,
     resources: [],
     npcOverrides: [],
     lootTables: missionState.lootTables,
@@ -1981,6 +1993,14 @@ function objectiveGroupNames() {
 }
 
 function deriveMissionCompletion() {
+  if (missionState.missionType === "mining") {
+    return {
+      mode: "mine_quantity",
+      objectiveTypeID: Number(missionState.objectiveTypeID) || 0,
+      objectiveQuantity: Number(missionState.objectiveQuantity) || 0,
+      despawnDelaySeconds: 0,
+    };
+  }
   const objectiveKeys = missionState.encounters.filter((e) => e.objective && e.key).map((e) => e.key);
   if (objectiveKeys.length) {
     return { mode: "encounter_group_cleared", encounterKeys: objectiveKeys, despawnDelaySeconds: 0 };
@@ -2001,6 +2021,7 @@ function triggerOptionsHTML(selected) {
 function roleOptionsHTML(selected) {
   const options = [
     ["combat", "Combat pocket"],
+    ["mining", "Mining pocket"],
     ["gate_only", "Gate-only entry"],
     ["open", "Open pocket"],
     ["entry", "Entry pocket"],
@@ -2018,6 +2039,12 @@ function renderMissionOverview() {
   if (sec.level) facts.push(`${icon("bar-chart-3")} Level ${escapeHTML(String(sec.level))}`);
   facts.push(`${icon("door-open")} ${missionState.rooms.length} pocket${missionState.rooms.length === 1 ? "" : "s"}`);
   facts.push(`${icon("radar")} ${missionState.encounters.length} NPC line${missionState.encounters.length === 1 ? "" : "s"}`);
+  if (missionState.missionType === "mining") {
+    if (missionState.objectiveTypeID) facts.push(`${icon("pickaxe")} type ${escapeHTML(String(missionState.objectiveTypeID))}`);
+    if (missionState.objectiveQuantity) facts.push(`${icon("hash")} qty ${escapeHTML(String(missionState.objectiveQuantity))}`);
+    facts.push(`${icon("asterisk")} ${missionState.miningRocks.length} rock spec${missionState.miningRocks.length === 1 ? "" : "s"}`);
+    facts.push(`${icon("boxes")} ${missionState.environmentProps.length} prop${missionState.environmentProps.length === 1 ? "" : "s"}`);
+  }
   if (sec.damageProfile) facts.push(`${icon("zap")} ${escapeHTML(sec.damageProfile)}`);
   if (sec.ewar) facts.push(`${icon("radio")} ${escapeHTML(sec.ewar)}`);
   if (sec.recommendedShip) facts.push(`${icon("ship")} ${escapeHTML(sec.recommendedShip)}`);
@@ -2034,6 +2061,11 @@ function renderMissionOverview() {
 function renderMissionCompletionSummary() {
   const host = $("#missionCompletionSummary");
   if (!host) return;
+  if (missionState.missionType === "mining") {
+    host.innerHTML = `${icon("pickaxe")}<span>Mission completes after mining <strong>${escapeHTML(String(missionState.objectiveQuantity || 0))}</strong> units of type <strong>${escapeHTML(String(missionState.objectiveTypeID || "?"))}</strong>.</span>`;
+    hydrateIcons(host);
+    return;
+  }
   const names = objectiveGroupNames();
   host.innerHTML = names.length
     ? `${icon("flag")}<span>Mission completes when <strong>${names.map(escapeHTML).join(", ")}</strong> ${names.length > 1 ? "are" : "is"} destroyed.</span>`
@@ -2303,6 +2335,66 @@ function renderMissionGates() {
   });
 }
 
+function formatJson(value) {
+  return JSON.stringify(value || [], null, 2);
+}
+
+function parseArrayJsonField(field, label) {
+  const raw = field.value.trim();
+  if (!raw) return [];
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON array.`);
+  }
+  return parsed;
+}
+
+function renderMissionMining() {
+  const panel = $("#missionMiningPanel");
+  if (!panel) return;
+  const isMining = missionState.missionType === "mining" || $("#missionCategorySelect").value === "mining";
+  panel.hidden = !isMining;
+  if (!isMining) return;
+  const objectiveTypeInput = $("#missionObjectiveTypeInput");
+  const objectiveQuantityInput = $("#missionObjectiveQuantityInput");
+  const rocksJson = $("#missionMiningRocksJson");
+  const propsJson = $("#missionEnvironmentPropsJson");
+  objectiveTypeInput.value = missionState.objectiveTypeID || "";
+  objectiveQuantityInput.value = missionState.objectiveQuantity || "";
+  rocksJson.value = formatJson(missionState.miningRocks);
+  propsJson.value = formatJson(missionState.environmentProps);
+  objectiveTypeInput.oninput = () => {
+    missionState.objectiveTypeID = Number(objectiveTypeInput.value) || 0;
+    renderMissionOverview();
+    renderMissionCompletionSummary();
+  };
+  objectiveQuantityInput.oninput = () => {
+    missionState.objectiveQuantity = Number(objectiveQuantityInput.value) || 0;
+    renderMissionOverview();
+    renderMissionCompletionSummary();
+  };
+  rocksJson.onchange = () => {
+    try {
+      missionState.miningRocks = parseArrayJsonField(rocksJson, "Mining rocks");
+      rocksJson.value = formatJson(missionState.miningRocks);
+      showNotice("Mining rocks JSON accepted.");
+    } catch (error) {
+      showNotice(error.message);
+      rocksJson.value = formatJson(missionState.miningRocks);
+    }
+  };
+  propsJson.onchange = () => {
+    try {
+      missionState.environmentProps = parseArrayJsonField(propsJson, "Environment props");
+      propsJson.value = formatJson(missionState.environmentProps);
+      showNotice("Environment props JSON accepted.");
+    } catch (error) {
+      showNotice(error.message);
+      propsJson.value = formatJson(missionState.environmentProps);
+    }
+  };
+}
+
 function renderMissionSelectedTemplate() {
   const card = $("#missionSelectedTemplateCard");
   if (!card) return;
@@ -2313,7 +2405,7 @@ function renderMissionSelectedTemplate() {
         ${icon("file-plus-2")}
         <div>
           <strong>${missionState.missionID ? "Blank mission site" : "No linked dungeon template"}</strong>
-          <span>${templateID ? `Authoring ${escapeHTML(templateID)} as private mission combat.` : "Add rooms and encounters to define the mission site."}</span>
+          <span>${templateID ? `Authoring ${escapeHTML(templateID)} as a private mission site.` : "Add mission mechanics to define the site."}</span>
         </div>
       </div>
     `;
@@ -2349,6 +2441,7 @@ function renderMission() {
   renderMissionCompletionSummary();
   renderMissionPockets();
   renderMissionGates();
+  renderMissionMining();
   renderLootTables($("#missionLootList"), missionState.lootTables, renderMission);
 }
 
@@ -2399,6 +2492,10 @@ async function openMissionFromCatalog(mission) {
   missionState.rooms = Array.isArray(draft.rooms) ? structuredClone(draft.rooms) : [];
   missionState.gates = Array.isArray(draft.gates) ? structuredClone(draft.gates) : [];
   missionState.encounters = Array.isArray(draft.encounters) ? structuredClone(draft.encounters) : [];
+  missionState.miningRocks = Array.isArray(draft.miningRocks) ? structuredClone(draft.miningRocks) : [];
+  missionState.environmentProps = Array.isArray(draft.environmentProps) ? structuredClone(draft.environmentProps) : [];
+  missionState.objectiveTypeID = Number(draft.objectiveTypeID) || Number(draft.completion && draft.completion.objectiveTypeID) || 0;
+  missionState.objectiveQuantity = Number(draft.objectiveQuantity) || Number(draft.completion && draft.completion.objectiveQuantity) || 0;
   missionState.lootTables = Array.isArray(draft.lootTables) ? structuredClone(draft.lootTables) : [];
   missionState.completion = draft.completion && typeof draft.completion === "object" ? structuredClone(draft.completion) : null;
   missionState.missionSecurity = draft.missionSecurity && typeof draft.missionSecurity === "object" ? structuredClone(draft.missionSecurity) : null;
@@ -2443,6 +2540,10 @@ async function loadMissionOverlay(overlay) {
   missionState.rooms = Array.isArray(overlay.rooms) ? structuredClone(overlay.rooms) : [];
   missionState.gates = Array.isArray(overlay.gates) ? structuredClone(overlay.gates) : [];
   missionState.encounters = Array.isArray(overlay.encounters) ? structuredClone(overlay.encounters) : [];
+  missionState.miningRocks = Array.isArray(overlay.miningRocks) ? structuredClone(overlay.miningRocks) : [];
+  missionState.environmentProps = Array.isArray(overlay.environmentProps) ? structuredClone(overlay.environmentProps) : [];
+  missionState.objectiveTypeID = Number(overlay.objectiveTypeID) || Number(overlay.completion && overlay.completion.objectiveTypeID) || 0;
+  missionState.objectiveQuantity = Number(overlay.objectiveQuantity) || Number(overlay.completion && overlay.completion.objectiveQuantity) || 0;
   missionState.lootTables = Array.isArray(overlay.lootTables) ? structuredClone(overlay.lootTables) : [];
   missionState.completion = overlay.completion && typeof overlay.completion === "object" ? structuredClone(overlay.completion) : null;
   missionState.missionSecurity = overlay.missionSecurity && typeof overlay.missionSecurity === "object" ? structuredClone(overlay.missionSecurity) : null;
@@ -2590,22 +2691,22 @@ function renderMissionPackSummary(summary, dir) {
   }
   const applyBtn = document.createElement("button");
   applyBtn.className = "primary";
-  applyBtn.textContent = "Apply pack to Live Server";
+  applyBtn.textContent = "Apply pack to Static Tables";
   applyBtn.addEventListener("click", () => applyMissionPack(dir, summary));
   wrap.append(title, sub, list, applyBtn);
   meta.appendChild(wrap);
 }
 
 async function applyMissionPack(dir, summary) {
-  if (!window.confirm(`Write ${summary.templateID} to the LIVE EveJS server? The original template (if any) is backed up first.`)) return;
+  if (!window.confirm(`Write ${summary.templateID} to EveJS static tables? Build with CreateDatabase --force afterward.`)) return;
   try {
-    const result = await api("/api/pack/apply", { method: "POST", body: { dir, target: "live" } });
+    const result = await api("/api/pack/apply", { method: "POST", body: { dir, target: "static" } });
     const flags = [
       summary.missionID ? `EVEJS_FORCE_MISSION_ID=${summary.missionID}` : null,
       `EVEJS_FORCE_MISSION_TEMPLATE=${result.templateID}`,
       summary.dungeonID ? `EVEJS_FORCE_MISSION_DUNGEON_ID=${summary.dungeonID}` : null,
     ].filter(Boolean).join("  ");
-    showNotice(`Wrote ${result.templateID} to live (${result.action}). Restart EveJS with: ${flags}`);
+    showNotice(`Wrote ${result.templateID} to static tables (${result.action}). Run CreateDatabase --force, then start EveJS with: ${flags}`);
   } catch (error) {
     showNotice(`Pack apply failed: ${error.message}`);
   }
@@ -2676,15 +2777,15 @@ async function saveTemplate(template) {
   }
 }
 
-async function applyMissionToEmulator(target = "live") {
+async function applyMissionToEmulator(target = "static") {
   const wakka = missionState.wakka || $("#missionTemplateIdInput").value.replace(/^eve-survival:/, "").trim();
   if (!wakka) { showNotice("This mission has no eve-survival source. Import from a wakka/URL first."); return; }
-  const where = target === "live" ? "the LIVE EveJS server" : "the test sandbox";
+  const where = target === "sandbox" ? "the test sandbox" : "EveJS static tables";
   if (!window.confirm(`Scrape eve-survival:${wakka} and write it to ${where}? The original template is backed up first.`)) return;
   try {
     const result = await api("/api/scrape/apply", { method: "POST", body: { wakka, target } });
-    const note = result.target === "live"
-      ? `Wrote ${result.templateID} to the live server. Restart EveJS to load it.`
+    const note = result.target === "static"
+      ? `Wrote ${result.templateID} to static tables. Run CreateDatabase --force to build it.`
       : `${result.action} ${result.templateID} in the sandbox. Verify: npm run emu-test -- --wakka ${wakka}`;
     showNotice(note);
   } catch (error) {
@@ -2716,7 +2817,7 @@ async function searchMissions() {
       missionObjectiveSummary(mission),
     ]);
     const button = row.querySelector("button");
-    if (mission.missionType === "combat" && mission.linkedTemplateID) {
+    if (["combat", "mining"].includes(mission.missionType) && mission.linkedTemplateID) {
       button.innerHTML = iconText("file-input", "Author");
       button.addEventListener("click", () => openMissionFromCatalog(mission));
     } else {
@@ -2743,6 +2844,20 @@ async function previewPack(write = false) {
   hydrateIcons($("#packSummary"));
   $("#packPreview").textContent = JSON.stringify({ outputPath: data.outputPath, ...pack }, null, 2);
   if (write) showNotice(`Template pack written to ${data.outputPath}`);
+}
+
+async function applyPackToStaticTables() {
+  if (!window.confirm("Write all valid generated templates to EveJS static dungeonAuthority? Build with CreateDatabase --force afterward.")) return;
+  const data = await api("/api/template-pack/apply-static", { method: "POST" });
+  $("#packPreview").textContent = JSON.stringify({
+    outputPath: data.outputPath,
+    target: data.target,
+    dataDir: data.dataDir,
+    applied: data.applied,
+    backupCount: data.backupCount,
+    pack: data.pack,
+  }, null, 2);
+  showNotice(`Wrote ${data.applied.length} template(s) to static tables. Run CreateDatabase --force to build them into _local.`);
 }
 
 async function loadResearch() {
@@ -2782,7 +2897,7 @@ function bindEvents() {
   $("#templateInput").addEventListener("keydown", (event) => { if (event.key === "Enter") loadTemplateById(); });
   $("#missionApplyEmuBtn").addEventListener("click", applyMissionToEmulator);
   $("#missionValidateBtn").addEventListener("click", validateMission);
-  $("#missionCategorySelect").addEventListener("change", () => { missionState.missionType = $("#missionCategorySelect").value; renderMissionOverview(); });
+  $("#missionCategorySelect").addEventListener("change", () => { missionState.missionType = $("#missionCategorySelect").value; renderMission(); });
   $("#missionTitleInput").addEventListener("input", renderMissionOverview);
   $("#missionTemplateIdInput").addEventListener("input", renderMissionSelectedTemplate);
   $("#addPocketBtn").addEventListener("click", () => {
@@ -2836,6 +2951,7 @@ function bindEvents() {
   $("#newOverlayButton").addEventListener("click", resetForm);
   $("#refreshPackButton").addEventListener("click", () => previewPack(false));
   $("#writePackButton").addEventListener("click", () => previewPack(true));
+  $("#applyStaticPackButton").addEventListener("click", applyPackToStaticTables);
   $("#loadResearchButton").addEventListener("click", loadResearch);
   $("#cloneDbButton").addEventListener("click", async () => {
     await api("/api/clone", { method: "POST", body: { force: false } });

@@ -114,8 +114,8 @@ multi-pocket missions (a gate per pocket).
 ## Quick recipe (the common case)
 
 ```
-npm run scrape-apply -- --wakka Score1gu     # writes LIVE eve-survival:Score1gu (backs up original)
-# then in eve.js/server, start with EVEJS_FORCE_MISSION_TEMPLATE=eve-survival:Score1gu and accept The Score
+npm run scrape-apply -- --wakka Score1gu     # writes static eve-survival:Score1gu (backs up original)
+# then rebuild EveJS with CreateDatabase --force, start with EVEJS_FORCE_MISSION_TEMPLATE=eve-survival:Score1gu, and accept The Score
 ```
 To revert: restore `workspace/backups/dungeonAuthority/eve-survival_Score1gu.json` over the template (or
 re-pull from source) and restart.
@@ -136,7 +136,7 @@ re-pull from source) and restart.
 
 ### 1. Scrape + apply (CLI)
 ```
-npm run scrape-apply -- --wakka Score1gu             # LIVE (default): overwrite eve-survival:Score1gu
+npm run scrape-apply -- --wakka Score1gu             # STATIC (default): overwrite eve-survival:Score1gu
 npm run scrape-apply -- --url "https://eve-survival.org/?wakka=Score1gu"
 npm run scrape-apply -- --wakka Score1gu --sandbox   # disposable copy instead (for the harness)
 ```
@@ -145,7 +145,7 @@ Prints the parsed pockets/groups/ships and the backup path. `--sandbox` copies t
 
 ### 2. Scrape + apply (UI)
 Mission Designer → **Import from eve-survival** (enter `Score1gu` or the URL) → review the pockets/groups/NPCs →
-**Apply to Live Server**. Same live write as the CLI (original backed up).
+**Write Static Tables**. Same static-table write as the CLI (original backed up).
 
 ### 3. Verify headless (sandbox)
 ```
@@ -157,8 +157,10 @@ npm run emu-test -- --wakka Score1gu
   resolved to. (EveJS's matcher is fuzzy; see the force-flag above to pin it.)
 
 ### 4. Fly it (real client)
-After a live apply, start the real server (PowerShell), optionally with the force flag, and accept The Score:
+After a static apply, rebuild the runtime database, then start the real server (PowerShell), optionally with the force flag, and accept The Score:
 ```powershell
+cd C:\Users\ryanf\Documents\GitHub\eve.js
+tools\DatabaseCreator\CreateDatabase.bat /force
 cd C:\Users\ryanf\Documents\GitHub\eve.js\server
 $env:EVEJS_FORCE_MISSION_TEMPLATE="eve-survival:Score1gu"   # optional: any security agent serves it
 npm start
@@ -167,8 +169,8 @@ npm start
 ## Boundaries / safety
 - Scraping/network lives only in `src/lib/missionScraper.js` and runs only via `scrape-apply` / the Import
   button. EveJS gets no scraper code.
-- Live applies overwrite one `eve-survival:<Wakka>` template in `_local/gameStore/data`; the original is backed
-  up to `workspace/backups/dungeonAuthority/` first, so edits are reversible.
+- Static applies overwrite one `eve-survival:<Wakka>` template in `tools/DatabaseCreator/staticTables/dungeonAuthority`;
+  the original is backed up to `workspace/backups/dungeonAuthority/` first, so edits are reversible.
 - `npm run scrape-test` checks the parser offline against `test/fixtures/Score1gu.html`.
 
 ## Known gaps / follow-ups

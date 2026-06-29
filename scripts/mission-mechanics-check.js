@@ -8,8 +8,12 @@
  */
 
 const assert = require("node:assert");
+const { getCatalog } = require("../src/lib/catalog");
 const { buildTemplate } = require("../src/lib/eveSurvivalTemplate");
+const { buildSecurityMissionDraft } = require("../src/lib/missionSecurity");
 const { validateMissionTemplate } = require("../src/lib/missionTemplateValidator");
+const { buildGeneratedTemplate } = require("../src/lib/templatePack");
+const { validateOverlay } = require("../src/lib/validator");
 
 function check(name, fn) {
   fn();
@@ -39,6 +43,39 @@ check("mining: miningRocks + objectiveQuantity", () => {
   assert.equal(ph.miningRocks[0].typeID, 3739, "ore type id");
   const v = validateMissionTemplate(t);
   assert.equal(v.errors.length, 0, `no errors: ${v.errors.join("; ")}`);
+});
+
+check("mining: exact L1 EveJS static template loads as mission-private mining", () => {
+  const catalog = getCatalog({ force: true });
+  const template = catalog.templatesByID.get("client-dungeon:2449");
+  assert.ok(template, "Starting Simple template found");
+  assert.equal(template.contentFamily, "mission", "classified as mission");
+  assert.equal(template.delivery, "mission_private", "classified as private mission");
+  assert.equal(template.siteFamily, "mining", "effective site family from populationHints");
+  assert.equal(template.siteKind, "mining", "effective site kind from populationHints");
+  assert.equal(template.raw.populationHints.miningRocks[0].dunObjectID, 867587, "exact rock dunObjectID");
+  assert.equal(template.raw.populationHints.environmentProps.length, 14, "exact prop cluster count");
+});
+
+check("mining: Mission Designer draft preserves exact rocks and props through generated template", () => {
+  const catalog = getCatalog({ force: true });
+  const result = buildSecurityMissionDraft(4801);
+  assert.equal(result.success, true, "draft loads");
+  const draft = result.draft;
+  assert.equal(draft.missionType, "mining", "draft is mining");
+  assert.equal(draft.objectiveTypeID, 28617, "objective ore");
+  assert.equal(draft.objectiveQuantity, 20000, "objective quantity");
+  assert.equal(draft.miningRocks[0].dunObjectID, 867587, "draft rock identity");
+  assert.equal(draft.environmentProps.length, 14, "draft exact props");
+  const validation = validateOverlay(draft);
+  assert.equal(validation.ok, true, validation.findings.map((finding) => finding.message).join("; "));
+  const generated = buildGeneratedTemplate(catalog, draft);
+  assert.equal(generated.templateID, "client-dungeon:2449", "exports back to linked template id");
+  assert.equal(generated.populationHints.siteFamily, "mining", "generated mining site family");
+  assert.equal(generated.populationHints.objectiveTypeID, 28617, "generated objective ore");
+  assert.equal(generated.populationHints.miningRocks[0].dunObjectID, 867587, "generated rock identity");
+  assert.equal(generated.populationHints.environmentProps.length, 14, "generated exact props");
+  assert.equal(generated.populationHints.environmentProps[0].exact, true, "generated exact prop flag");
 });
 
 // Proximity: an authored proximity template carries target+range and validates clean.

@@ -319,7 +319,7 @@
               <div class="section-heading">
                 <h3><i data-lucide="globe" class="icon"></i><span>Import from eve-survival</span></h3>
               </div>
-              <p class="section-hint">Scrape a mission from eve-survival.org on demand. Loads into the editor below to review, then apply to the test emulator.</p>
+              <p class="section-hint">Scrape a mission from eve-survival.org on demand. Loads into the editor below to review, then write to the static tables.</p>
               <div class="search-row">
                 <input id="scrapeInput" placeholder="Score1gu  or  https://eve-survival.org/?wakka=Score1gu">
                 <button class="secondary square" id="scrapeImportBtn" title="Scrape and load"><i data-lucide="download" class="icon"></i><span>Import</span></button>
@@ -329,7 +329,7 @@
               <div class="section-heading">
                 <h3><i data-lucide="package" class="icon"></i><span>Import mission pack</span></h3>
               </div>
-              <p class="section-hint">Load a decoded TQ-log mission pack (a folder) — the ground-truth source with exact spawns, trigger families, and objective. Review, then write its template to the live server.</p>
+              <p class="section-hint">Load a decoded TQ-log mission pack (a folder) — the ground-truth source with exact spawns, trigger families, and objective. Review, then write its template to the static tables.</p>
               <div class="search-row">
                 <input id="packInput" placeholder="D:\path\to\13735-alluring-emanations">
                 <button class="secondary square" id="packImportBtn" title="Load pack"><i data-lucide="download" class="icon"></i><span>Load</span></button>
@@ -406,6 +406,31 @@
                 </div>
                 <div id="missionGateList" class="editor-list"></div>
 
+                <div id="missionMiningPanel" hidden>
+                  <div class="section-heading">
+                    <h3><i data-lucide="pickaxe" class="icon"></i><span>Mining Objective</span></h3>
+                  </div>
+                  <p class="section-hint">Exact mission data from EveJS. Keep TQ-only fields such as dunObjectID, dunRotation, exact, ownerID, and positionOffset intact.</p>
+                  <div class="form-grid">
+                    <label>
+                      <span>Objective TypeID</span>
+                      <input id="missionObjectiveTypeInput" inputmode="numeric" placeholder="28617">
+                    </label>
+                    <label>
+                      <span>Objective Quantity</span>
+                      <input id="missionObjectiveQuantityInput" inputmode="numeric" placeholder="20000">
+                    </label>
+                    <label class="span-2">
+                      <span>Mining Rocks JSON</span>
+                      <textarea id="missionMiningRocksJson" rows="8" spellcheck="false"></textarea>
+                    </label>
+                    <label class="span-2">
+                      <span>Environment Props JSON</span>
+                      <textarea id="missionEnvironmentPropsJson" rows="10" spellcheck="false"></textarea>
+                    </label>
+                  </div>
+                </div>
+
                 <div class="section-heading">
                   <h3><i data-lucide="package-open" class="icon"></i><span>Loot Tables</span></h3>
                   <button class="secondary" id="addMissionLootBtn"><i data-lucide="plus" class="icon"></i><span>Add Loot Table</span></button>
@@ -426,7 +451,7 @@
                 <div class="step-footer">
                   <button class="secondary" id="missionCloseBtn"><i data-lucide="x" class="icon"></i><span>Close</span></button>
                   <div class="topbar-actions">
-                    <button class="secondary" id="missionApplyEmuBtn" title="Scrape this mission and write it to the live EveJS server (original backed up)"><i data-lucide="database" class="icon"></i><span>Apply to Live Server</span></button>
+                    <button class="secondary" id="missionApplyEmuBtn" title="Scrape this mission and write it to the EveJS static tables"><i data-lucide="database" class="icon"></i><span>Write Static Tables</span></button>
                     <button class="primary" id="missionSaveBtn"><i data-lucide="save" class="icon"></i><span>Save Draft</span></button>
                   </div>
                 </div>
@@ -493,6 +518,7 @@
               <div class="topbar-actions">
                 <button class="secondary" id="refreshPackButton"><i data-lucide="eye" class="icon"></i><span>Preview</span></button>
                 <button class="primary accent" id="writePackButton"><i data-lucide="file-json" class="icon"></i><span>Write JSON</span></button>
+                <button class="primary" id="applyStaticPackButton"><i data-lucide="database" class="icon"></i><span>Write Static Tables</span></button>
               </div>
             </div>
             <div class="pack-summary" id="packSummary"></div>

@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const {
   CLONE_DATA_DIR,
   getLiveDataDir,
+  getStaticTableDir,
   readJsonFile,
   readTable,
   tablePath,
@@ -43,6 +44,17 @@ function limitValue(value, fallback = DEFAULT_LIMIT) {
 
 function activeDataDir() {
   return fs.existsSync(CLONE_DATA_DIR) ? CLONE_DATA_DIR : getLiveDataDir();
+}
+
+function readCatalogTable(dataDir, table, fallback = {}) {
+  if (table === "dungeonAuthority" || table === "missionAuthority") {
+    const staticTableDir = getStaticTableDir();
+    const staticTableFile = tablePath(staticTableDir, table);
+    if (fs.existsSync(staticTableFile)) {
+      return readTable(staticTableDir, table, fallback);
+    }
+  }
+  return readTable(dataDir, table, fallback);
 }
 
 function getRows(data, rowKey) {
@@ -118,17 +130,22 @@ function getTemplateName(template) {
 }
 
 function classifyTemplate(template) {
-  const siteFamily = normalizeSearch(template && template.siteFamily);
+  const populationHints = template && template.populationHints && typeof template.populationHints === "object"
+    ? template.populationHints
+    : {};
+  const siteFamily = normalizeSearch(populationHints.siteFamily || template && template.siteFamily);
   const siteKind = normalizeSearch(
-    template && template.siteKind ||
-    template && template.populationHints && template.populationHints.siteKind,
+    populationHints.siteKind ||
+    template && template.siteKind,
   );
   const name = normalizeSearch(getTemplateName(template));
   const source = normalizeSearch(template && template.source);
   const combined = `${siteFamily} ${siteKind} ${name} ${source}`;
 
   let contentFamily = "special";
-  if (siteFamily === "combat") {
+  if (siteFamily === "mission" || siteKind === "encounter" || siteKind === "mining" || siteKind === "transport" || siteKind === "storyline") {
+    contentFamily = "mission";
+  } else if (siteFamily === "combat") {
     contentFamily = "combat";
   } else if (siteFamily === "ore" || siteFamily === "gas" || siteFamily === "ice") {
     contentFamily = "resource";
@@ -191,14 +208,17 @@ function normalizeTemplate(template, itemTypesByID) {
     .filter((entry) => entry.typeID > 0);
   const classification = classifyTemplate({
     ...template,
+    siteFamily: normalizeText(populationHints.siteFamily || template && template.siteFamily),
     siteKind: normalizeText(populationHints.siteKind || template && template.siteKind),
   });
   return {
     templateID: normalizeText(template && template.templateID),
     name: getTemplateName(template),
     source: normalizeText(template && template.source),
-    siteFamily: normalizeText(template && template.siteFamily),
+    siteFamily: normalizeText(populationHints.siteFamily || template && template.siteFamily),
+    rawSiteFamily: normalizeText(template && template.siteFamily),
     siteKind: normalizeText(populationHints.siteKind || template && template.siteKind),
+    rawSiteKind: normalizeText(template && template.siteKind),
     contentFamily: classification.contentFamily,
     delivery: classification.delivery,
     sourceDungeonID: toInt(template && template.sourceDungeonID, 0),
@@ -467,6 +487,8 @@ function annotateTemplatesWithMissionTypes(templates, missionTemplateTypeIndex) 
     ));
     return {
       ...template,
+      contentFamily: "mission",
+      delivery: "mission_private",
       missionTypes,
       primaryMissionType: missionTypes[0] || "",
       missionReferenceCount: [...counts.values()].reduce((sum, count) => sum + count, 0),
@@ -475,11 +497,11 @@ function annotateTemplatesWithMissionTypes(templates, missionTemplateTypeIndex) 
 }
 
 function buildCatalog(dataDir = activeDataDir()) {
-  const solarSystems = getRows(readTable(dataDir, "solarSystems"), "solarSystems");
-  const stargates = getRows(readTable(dataDir, "stargates"), "stargates");
-  const itemTypes = getRows(readTable(dataDir, "itemTypes"), "types");
-  const dungeonAuthority = readTable(dataDir, "dungeonAuthority");
-  const missionAuthority = readTable(dataDir, "missionAuthority");
+  const solarSystems = getRows(readCatalogTable(dataDir, "solarSystems"), "solarSystems");
+  const stargates = getRows(readCatalogTable(dataDir, "stargates"), "stargates");
+  const itemTypes = getRows(readCatalogTable(dataDir, "itemTypes"), "types");
+  const dungeonAuthority = readCatalogTable(dataDir, "dungeonAuthority");
+  const missionAuthority = readCatalogTable(dataDir, "missionAuthority");
   const npcProfiles = getRows(readTable(dataDir, "npcProfiles"), "profiles");
   const npcLoadouts = getRows(readTable(dataDir, "npcLoadouts"), "loadouts");
   const npcBehaviorProfiles = getRows(readTable(dataDir, "npcBehaviorProfiles"), "behaviorProfiles");

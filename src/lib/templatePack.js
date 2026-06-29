@@ -103,6 +103,8 @@ function resolveSiteFamily(catalog, overlay) {
   const base = catalog.templatesByID.get(text(overlay.baseTemplateID));
   if (base && base.siteFamily) return base.siteFamily;
   const contentFamily = resolveContentFamily(overlay);
+  const missionType = resolveMissionType(overlay);
+  if (contentFamily === "mission" && missionType === "mining") return "mining";
   if (contentFamily === "resource") {
     const resources = Array.isArray(overlay.resources) ? overlay.resources : [];
     const hasGas = resources.some((resource) => {
@@ -121,6 +123,8 @@ function resolveSiteKind(catalog, overlay) {
   const base = catalog.templatesByID.get(text(overlay.baseTemplateID));
   if (base && base.siteKind) return base.siteKind;
   const delivery = resolveDelivery(overlay);
+  const missionType = resolveMissionType(overlay);
+  if (delivery === "mission_private" && missionType === "mining") return "mining";
   if (delivery === "mission_private") return "encounter";
   if (delivery === "static_beacon") return "static";
   if (delivery === "startup_rule") return "startup_rule";
@@ -277,6 +281,70 @@ function normalizeResource(catalog, resource) {
     radiusMeters: Number(resource && resource.radiusMeters) || null,
     cluster: text(resource && resource.cluster) || "main",
   };
+}
+
+function normalizePosition(value) {
+  if (!value || typeof value !== "object") return null;
+  const x = Number(value.x);
+  const y = Number(value.y);
+  const z = Number(value.z);
+  if (![x, y, z].every(Number.isFinite)) return null;
+  return { x, y, z };
+}
+
+function normalizeRotation(value) {
+  if (!Array.isArray(value) || value.length !== 3) return null;
+  const rotation = value.map((entry) => Number(entry));
+  return rotation.every(Number.isFinite) ? rotation : null;
+}
+
+function normalizeMiningRock(rock) {
+  if (!rock || typeof rock !== "object") return null;
+  const oreTypeID = toInt(rock.oreTypeID || rock.typeID || rock.objectiveTypeID, 0);
+  const quantity = toInt(rock.quantity || rock.remainingQuantity || rock.quantityPerRock, 0);
+  if (!oreTypeID || quantity <= 0) return null;
+  const normalized = {
+    oreTypeID,
+    count: Math.max(1, toInt(rock.count, 1)),
+    quantity,
+  };
+  if (text(rock.label)) normalized.label = text(rock.label);
+  const positionOffset = normalizePosition(rock.positionOffset);
+  if (positionOffset) normalized.positionOffset = positionOffset;
+  const dunObjectID = toInt(rock.dunObjectID, 0);
+  if (dunObjectID > 0) normalized.dunObjectID = dunObjectID;
+  const dunRotation = normalizeRotation(rock.dunRotation);
+  if (dunRotation) normalized.dunRotation = dunRotation;
+  return normalized;
+}
+
+function normalizeEnvironmentProp(prop, index) {
+  if (!prop || typeof prop !== "object") return null;
+  const typeID = toInt(prop.typeID, 0);
+  if (!typeID) return null;
+  const normalized = {
+    key: text(prop.key) || `authored:${typeID}:${index + 1}`,
+    exact: prop.exact === true,
+    typeID,
+  };
+  if (text(prop.label)) normalized.label = text(prop.label);
+  const ownerID = toInt(prop.ownerID, 0);
+  if (ownerID > 0) normalized.ownerID = ownerID;
+  const dunObjectID = toInt(prop.dunObjectID, 0);
+  if (dunObjectID > 0) normalized.dunObjectID = dunObjectID;
+  const positionOffset = normalizePosition(prop.positionOffset);
+  if (positionOffset) normalized.positionOffset = positionOffset;
+  const dunRotation = normalizeRotation(prop.dunRotation);
+  if (dunRotation) normalized.dunRotation = dunRotation;
+  if (Object.prototype.hasOwnProperty.call(prop, "dunObjectNameID")) {
+    normalized.dunObjectNameID = prop.dunObjectNameID;
+  }
+  if (Object.prototype.hasOwnProperty.call(prop, "objectiveTargetGroup")) {
+    normalized.objectiveTargetGroup = prop.objectiveTargetGroup;
+  }
+  if (prop.suppressSlimName === true) normalized.suppressSlimName = true;
+  if (prop.suppressSlimGraphicID === true) normalized.suppressSlimGraphicID = true;
+  return normalized;
 }
 
 function resourceKindForSite(resource, siteFamily) {
@@ -458,9 +526,20 @@ function buildGeneratedTemplate(catalog, overlay) {
   const authoredResources = (Array.isArray(overlay.resources) ? overlay.resources : [])
     .map((resource) => normalizeResource(catalog, resource))
     .filter((resource) => resource.typeID > 0);
+  const authoredMiningRocks = (Array.isArray(overlay.miningRocks) ? overlay.miningRocks : [])
+    .map((rock) => normalizeMiningRock(rock))
+    .filter(Boolean);
+  const authoredEnvironmentProps = (Array.isArray(overlay.environmentProps) ? overlay.environmentProps : [])
+    .map((prop, index) => normalizeEnvironmentProp(prop, index))
+    .filter(Boolean);
   const authoredLootTables = authoredLootTablesForOverlay(catalog, overlay);
   const resourceComposition = buildResourceComposition(authoredResources, siteFamily);
   const objectiveMarkers = buildObjectiveMarkers(siteFamily, encounters, resourceComposition);
+  const isMiningMission = contentFamily === "mission" && missionType === "mining";
+  const objectiveTypeID = toInt(overlay.objectiveTypeID, 0) ||
+    toInt(overlay.completion && overlay.completion.objectiveTypeID, 0);
+  const objectiveQuantity = toInt(overlay.objectiveQuantity, 0) ||
+    toInt(overlay.completion && overlay.completion.objectiveQuantity, 0);
   return {
     templateID: generatedTemplateID(overlay),
     source: "eve_anom_utility",
@@ -504,7 +583,13 @@ function buildGeneratedTemplate(catalog, overlay) {
       completion: overlay.completion || {},
       containers: [],
       hazards: [],
-      environmentProps: [],
+      environmentProps: authoredEnvironmentProps,
+      ...(isMiningMission ? {
+        miningRocks: authoredMiningRocks,
+        objectiveTypeID: objectiveTypeID || null,
+        objectiveQuantity: objectiveQuantity || 0,
+        completeObjectiveOnEncounterClear: false,
+      } : {}),
       lootProfiles: authoredLootTables.map((lootTable) => ({
         lootTableID: lootTable.lootTableID,
         name: lootTable.name,
@@ -553,6 +638,10 @@ function buildGeneratedTemplate(catalog, overlay) {
       baseTemplate,
       scanner: overlay.scanner,
       authoredResources,
+      authoredMiningRocks,
+      authoredEnvironmentProps,
+      objectiveTypeID: objectiveTypeID || null,
+      objectiveQuantity: objectiveQuantity || 0,
       authoredRooms: roomProfiles,
       authoredGates,
       authoredLootTables,
@@ -572,6 +661,10 @@ function buildGeneratedTemplate(catalog, overlay) {
     scanner: overlay.scanner,
     rooms: roomProfiles,
     gates: authoredGates,
+    miningRocks: authoredMiningRocks,
+    environmentProps: authoredEnvironmentProps,
+    objectiveTypeID: objectiveTypeID || null,
+    objectiveQuantity: objectiveQuantity || 0,
     missionSecurity: overlay.missionSecurity || null,
     sourceLinks: Array.isArray(overlay.sourceLinks) ? clone(overlay.sourceLinks) : [],
     completion: overlay.completion || {},
@@ -656,5 +749,6 @@ async function buildTemplatePack(options = {}) {
 
 module.exports = {
   PACK_FILE,
+  buildGeneratedTemplate,
   buildTemplatePack,
 };

@@ -269,6 +269,74 @@ function buildGenericSecurityDraft(mission, baseTemplate) {
   };
 }
 
+function buildMiningMissionDraft(mission, baseTemplate) {
+  const raw = baseTemplate && baseTemplate.raw && typeof baseTemplate.raw === "object"
+    ? baseTemplate.raw
+    : {};
+  const populationHints = raw.populationHints && typeof raw.populationHints === "object"
+    ? raw.populationHints
+    : {};
+  const objectiveTypeID = toInt(
+    populationHints.objectiveTypeID ||
+      mission.objective && mission.objective.objectiveTypeID,
+    0,
+  );
+  const objectiveQuantity = toInt(
+    populationHints.objectiveQuantity ||
+      mission.objective && mission.objective.objectiveQuantity,
+    0,
+  );
+  return {
+    ...defaultMissionPrivateFields(),
+    title: `${text(mission.name, `Mission ${mission.missionID}`)} Mining`,
+    templateID: text(mission.linkedTemplateID) || `admin:mission-mining:${slug(mission.name || mission.missionID)}`,
+    baseTemplateID: text(mission.linkedTemplateID),
+    contentFamily: "mission",
+    delivery: "mission_private",
+    kind: "mission_combat",
+    missionType: "mining",
+    status: "draft",
+    rooms: [
+      {
+        roomKey: "room:entry",
+        label: "Mining Site",
+        role: "mining",
+        initialState: "active",
+      },
+    ],
+    gates: [],
+    encounters: [],
+    miningRocks: clone(populationHints.miningRocks || []),
+    environmentProps: clone(populationHints.environmentProps || []),
+    objectiveTypeID,
+    objectiveQuantity,
+    completion: {
+      mode: "mine_quantity",
+      objectiveTypeID,
+      objectiveQuantity,
+      despawnDelaySeconds: 0,
+    },
+    missionSecurity: {
+      missionID: mission.missionID,
+      dungeonID: mission.dungeonID,
+      sourceName: "Linked EveJS mining dungeon",
+      sourceUrl: "",
+      sourceConfidence: 90,
+      baseTemplateID: text(mission.linkedTemplateID),
+      objectiveTypeID,
+      objectiveQuantity,
+      miningRockCount: Array.isArray(populationHints.miningRocks)
+        ? populationHints.miningRocks.reduce((total, rock) => total + Math.max(1, toInt(rock && rock.count, 1)), 0)
+        : 0,
+      environmentPropCount: Array.isArray(populationHints.environmentProps)
+        ? populationHints.environmentProps.length
+        : 0,
+    },
+    sourceLinks: [],
+    notes: "Mining mission draft from the linked EveJS client dungeon. Preserve exact miningRocks and environmentProps when editing.",
+  };
+}
+
 function buildSecurityMissionDraft(missionID) {
   const mission = findMission(missionID);
   if (!mission) {
@@ -278,18 +346,20 @@ function buildSecurityMissionDraft(missionID) {
       error: "Mission not found.",
     };
   }
-  if (mission.missionType !== "combat" || !mission.linkedTemplateID) {
+  if (!["combat", "mining"].includes(mission.missionType) || !mission.linkedTemplateID) {
     return {
       success: false,
       errorMsg: "MISSION_NOT_SECURITY",
-      error: "Security mission drafts require a combat mission with a linked dungeon template.",
+      error: "Mission drafts require a combat or mining mission with a linked dungeon template.",
       mission: clone(mission),
     };
   }
   const baseTemplate = getCatalog().templatesByID.get(mission.linkedTemplateID) || null;
-  const draft = mission.missionID === 2391 || mission.dungeonID === 921
-    ? buildTheScoreGuristasDraft(mission, baseTemplate)
-    : buildGenericSecurityDraft(mission, baseTemplate);
+  const draft = mission.missionType === "mining"
+    ? buildMiningMissionDraft(mission, baseTemplate)
+    : mission.missionID === 2391 || mission.dungeonID === 921
+      ? buildTheScoreGuristasDraft(mission, baseTemplate)
+      : buildGenericSecurityDraft(mission, baseTemplate);
   return {
     success: true,
     mission: clone(mission),
