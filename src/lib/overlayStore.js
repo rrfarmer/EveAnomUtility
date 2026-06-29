@@ -110,6 +110,9 @@ function sanitizeOverlay(input = {}) {
     missionSecurity: input.missionSecurity && typeof input.missionSecurity === "object"
       ? input.missionSecurity
       : null,
+    missionRecord: input.missionRecord && typeof input.missionRecord === "object" && !Array.isArray(input.missionRecord)
+      ? input.missionRecord
+      : null,
     sourceLinks: Array.isArray(input.sourceLinks) ? input.sourceLinks : [],
     notes: String(input.notes || "").trim(),
     createdAt: input.createdAt || now,

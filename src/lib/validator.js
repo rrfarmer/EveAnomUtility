@@ -155,6 +155,22 @@ function validateOverlay(input = {}) {
     });
   }
 
+  if (contentFamily === "mission" && input.missionRecord !== undefined && input.missionRecord !== null) {
+    if (!input.missionRecord || typeof input.missionRecord !== "object" || Array.isArray(input.missionRecord)) {
+      findings.push({
+        level: "error",
+        path: "$.missionRecord",
+        message: "Mission record must be a JSON object.",
+      });
+    } else if (toInt(input.missionRecord.missionID, 0) <= 0) {
+      findings.push({
+        level: "error",
+        path: "$.missionRecord.missionID",
+        message: "Mission record needs a positive missionID.",
+      });
+    }
+  }
+
   const templateID = text(input.templateID) || text(input.baseTemplateID);
   if (!templateID) {
     findings.push({

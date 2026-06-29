@@ -64,6 +64,7 @@ const {
   resolveApplyTarget,
   backupTemplateOnce,
   readDungeonAuthority,
+  writeJsonAtomic,
   writeDungeonAuthority,
 } = require("./lib/sandbox");
 
@@ -361,12 +362,31 @@ async function routeApi(req, res, url) {
         if (backup) backups.push(backup);
       }
       await writeDungeonAuthority(applyTarget.dataDir, dungeon);
+      const missionRecords = Array.isArray(pack.missionRecords) ? pack.missionRecords : [];
+      const appliedMissionRecords = [];
+      if (missionRecords.length > 0) {
+        const missionAuthority = readTable(applyTarget.dataDir, "missionAuthority", { missionsByID: {} });
+        missionAuthority.missionsByID = missionAuthority.missionsByID || {};
+        for (const record of missionRecords) {
+          const missionID = Number(record && record.missionID) || 0;
+          if (!missionID) continue;
+          const key = String(missionID);
+          const existing = missionAuthority.missionsByID[key];
+          missionAuthority.missionsByID[key] = record;
+          appliedMissionRecords.push({
+            missionID,
+            action: existing ? "overwrote" : "inserted",
+          });
+        }
+        await writeJsonAtomic(path.join(applyTarget.dataDir, "missionAuthority", "data.json"), missionAuthority);
+      }
       getCatalog({ force: true });
       sendJson(res, 200, {
         success: true,
         target: applyTarget.target,
         dataDir: applyTarget.dataDir,
         applied,
+        appliedMissionRecords,
         backupCount: backups.length,
         outputPath: PACK_FILE,
         pack,

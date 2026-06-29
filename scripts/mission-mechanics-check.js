@@ -67,6 +67,7 @@ check("mining: Mission Designer draft preserves exact rocks and props through ge
   assert.equal(draft.objectiveQuantity, 20000, "objective quantity");
   assert.equal(draft.miningRocks[0].dunObjectID, 867587, "draft rock identity");
   assert.equal(draft.environmentProps.length, 14, "draft exact props");
+  assert.equal(draft.missionRecord.missionID, 4801, "draft carries missionAuthority row");
   const validation = validateOverlay(draft);
   assert.equal(validation.ok, true, validation.findings.map((finding) => finding.message).join("; "));
   const generated = buildGeneratedTemplate(catalog, draft);
@@ -76,6 +77,7 @@ check("mining: Mission Designer draft preserves exact rocks and props through ge
   assert.equal(generated.populationHints.miningRocks[0].dunObjectID, 867587, "generated rock identity");
   assert.equal(generated.populationHints.environmentProps.length, 14, "generated exact props");
   assert.equal(generated.populationHints.environmentProps[0].exact, true, "generated exact prop flag");
+  assert.equal(generated.missionRecord.missionID, 4801, "generated template carries missionAuthority row");
 });
 
 // Proximity: an authored proximity template carries target+range and validates clean.

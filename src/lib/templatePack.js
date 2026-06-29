@@ -504,6 +504,25 @@ function collectAuthoredLootTables(catalog, overlays, globalLootTables = []) {
   return [...byID.values()].sort((left, right) => left.lootTableID.localeCompare(right.lootTableID));
 }
 
+function normalizeMissionAuthorityRecord(record) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) return null;
+  const missionID = toInt(record.missionID, 0);
+  if (!missionID) return null;
+  return {
+    ...clone(record),
+    missionID,
+  };
+}
+
+function collectMissionAuthorityRecords(overlays) {
+  const byID = new Map();
+  for (const overlay of Array.isArray(overlays) ? overlays : []) {
+    const record = normalizeMissionAuthorityRecord(overlay && overlay.missionRecord);
+    if (record) byID.set(String(record.missionID), record);
+  }
+  return [...byID.values()].sort((left, right) => left.missionID - right.missionID);
+}
+
 function buildGeneratedTemplate(catalog, overlay) {
   const contentFamily = resolveContentFamily(overlay);
   const delivery = resolveDelivery(overlay);
@@ -645,6 +664,7 @@ function buildGeneratedTemplate(catalog, overlay) {
       authoredRooms: roomProfiles,
       authoredGates,
       authoredLootTables,
+      missionRecord: normalizeMissionAuthorityRecord(overlay.missionRecord),
       missionSecurity: overlay.missionSecurity || null,
       sourceLinks: Array.isArray(overlay.sourceLinks) ? clone(overlay.sourceLinks) : [],
       completion: overlay.completion || {},
@@ -666,6 +686,7 @@ function buildGeneratedTemplate(catalog, overlay) {
     objectiveTypeID: objectiveTypeID || null,
     objectiveQuantity: objectiveQuantity || 0,
     missionSecurity: overlay.missionSecurity || null,
+    missionRecord: normalizeMissionAuthorityRecord(overlay.missionRecord),
     sourceLinks: Array.isArray(overlay.sourceLinks) ? clone(overlay.sourceLinks) : [],
     completion: overlay.completion || {},
     npcAuthoring: {
@@ -729,6 +750,7 @@ async function buildTemplatePack(options = {}) {
     ],
     templates: selected.map((overlay) => buildGeneratedTemplate(catalog, overlay)),
     assignments: selected.map((overlay) => buildAssignment(catalog, overlay)),
+    missionRecords: collectMissionAuthorityRecords(selected),
     npcLootTables: collectAuthoredLootTables(catalog, selected, globalLootTables),
     validation: {
       validOverlayCount: selected.length,

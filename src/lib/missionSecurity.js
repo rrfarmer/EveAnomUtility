@@ -159,6 +159,7 @@ function buildTheScoreGuristasDraft(mission, baseTemplate) {
     delivery: "mission_private",
     kind: "mission_combat",
     missionType: "combat",
+    missionRecord: clone(mission.raw || null),
     status: "draft",
     rooms,
     gates: [
@@ -243,6 +244,7 @@ function buildGenericSecurityDraft(mission, baseTemplate) {
     delivery: "mission_private",
     kind: "mission_combat",
     missionType: "combat",
+    missionRecord: clone(mission.raw || null),
     status: "draft",
     rooms,
     gates: gate ? [{
@@ -295,6 +297,7 @@ function buildMiningMissionDraft(mission, baseTemplate) {
     delivery: "mission_private",
     kind: "mission_combat",
     missionType: "mining",
+    missionRecord: clone(mission.raw || null),
     status: "draft",
     rooms: [
       {

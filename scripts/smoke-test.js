@@ -200,7 +200,8 @@ async function main() {
     if (savedMining.statusCode !== 200) throw new Error(`/api/overlays save Mining failed: ${savedMining.body}`);
     const miningPack = await request(server, "/api/template-pack");
     if (miningPack.statusCode !== 200) throw new Error(`/api/template-pack Mining failed: ${miningPack.body}`);
-    const generatedMiningTemplate = JSON.parse(miningPack.body).pack.templates.find((template) => template.templateID === miningOverlay.templateID);
+    const parsedMiningPack = JSON.parse(miningPack.body);
+    const generatedMiningTemplate = parsedMiningPack.pack.templates.find((template) => template.templateID === miningOverlay.templateID);
     if (
       !generatedMiningTemplate ||
       generatedMiningTemplate.populationHints.objectiveTypeID !== 28617 ||
@@ -208,6 +209,9 @@ async function main() {
       generatedMiningTemplate.populationHints.environmentProps.length !== 14
     ) {
       throw new Error(`Mining draft did not emit exact template data: ${miningPack.body}`);
+    }
+    if (!parsedMiningPack.pack.missionRecords.some((record) => record.missionID === startingSimple.missionID)) {
+      throw new Error(`Mining draft did not emit missionAuthority record: ${miningPack.body}`);
     }
     const miningOverlayDelete = await request(server, `/api/overlays/${encodeURIComponent(miningOverlay.id)}`, { method: "DELETE" });
     if (miningOverlayDelete.statusCode !== 200) throw new Error(`/api/overlays delete Mining failed: ${miningOverlayDelete.body}`);

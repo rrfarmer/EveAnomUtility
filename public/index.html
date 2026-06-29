@@ -392,6 +392,17 @@
                 </div>
                 <div class="selected-template" id="missionSelectedTemplateCard"></div>
 
+                <div id="missionRecordPanel" hidden>
+                  <div class="section-heading">
+                    <h3><i data-lucide="database" class="icon"></i><span>Mission Authority Record</span></h3>
+                  </div>
+                  <p class="section-hint">Raw missionAuthority row that EveJS uses to offer the mission and define objective item/quantity. Edit carefully; generated exports write this to the static missionAuthority table.</p>
+                  <label class="span-2">
+                    <span>Mission Record JSON</span>
+                    <textarea id="missionRecordJson" rows="10" spellcheck="false"></textarea>
+                  </label>
+                </div>
+
                 <div class="section-heading">
                   <h3><i data-lucide="swords" class="icon"></i><span>Pockets &amp; Spawns</span></h3>
                   <button class="secondary" id="addPocketBtn"><i data-lucide="plus" class="icon"></i><span>Add Pocket</span></button>

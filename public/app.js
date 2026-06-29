@@ -1837,6 +1837,7 @@ const missionState = {
   environmentProps: [],
   objectiveTypeID: 0,
   objectiveQuantity: 0,
+  missionRecord: null,
   lootTables: [],
   completion: null,
   missionSecurity: null,
@@ -1858,6 +1859,7 @@ function blankMissionState() {
   missionState.environmentProps = [];
   missionState.objectiveTypeID = 0;
   missionState.objectiveQuantity = 0;
+  missionState.missionRecord = null;
   missionState.lootTables = [];
   missionState.completion = null;
   missionState.missionSecurity = null;
@@ -1895,6 +1897,7 @@ function missionOverlayFromForm() {
     environmentProps: missionState.environmentProps,
     objectiveTypeID: Number(missionState.objectiveTypeID) || 0,
     objectiveQuantity: Number(missionState.objectiveQuantity) || 0,
+    missionRecord: missionState.missionRecord,
     resources: [],
     npcOverrides: [],
     lootTables: missionState.lootTables,
@@ -2349,6 +2352,36 @@ function parseArrayJsonField(field, label) {
   return parsed;
 }
 
+function parseObjectJsonField(field, label) {
+  const raw = field.value.trim();
+  if (!raw) return null;
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object.`);
+  }
+  return parsed;
+}
+
+function renderMissionRecord() {
+  const panel = $("#missionRecordPanel");
+  if (!panel) return;
+  const field = $("#missionRecordJson");
+  const hasRecord = missionState.missionRecord && typeof missionState.missionRecord === "object";
+  panel.hidden = !hasRecord;
+  if (!hasRecord) return;
+  field.value = JSON.stringify(missionState.missionRecord, null, 2);
+  field.onchange = () => {
+    try {
+      missionState.missionRecord = parseObjectJsonField(field, "Mission record");
+      field.value = JSON.stringify(missionState.missionRecord, null, 2);
+      showNotice("Mission record JSON accepted.");
+    } catch (error) {
+      showNotice(error.message);
+      field.value = JSON.stringify(missionState.missionRecord || {}, null, 2);
+    }
+  };
+}
+
 function renderMissionMining() {
   const panel = $("#missionMiningPanel");
   if (!panel) return;
@@ -2438,6 +2471,7 @@ function renderMission() {
   ensureEncounterKeys();
   renderMissionOverview();
   renderMissionSelectedTemplate();
+  renderMissionRecord();
   renderMissionCompletionSummary();
   renderMissionPockets();
   renderMissionGates();
@@ -2496,6 +2530,7 @@ async function openMissionFromCatalog(mission) {
   missionState.environmentProps = Array.isArray(draft.environmentProps) ? structuredClone(draft.environmentProps) : [];
   missionState.objectiveTypeID = Number(draft.objectiveTypeID) || Number(draft.completion && draft.completion.objectiveTypeID) || 0;
   missionState.objectiveQuantity = Number(draft.objectiveQuantity) || Number(draft.completion && draft.completion.objectiveQuantity) || 0;
+  missionState.missionRecord = draft.missionRecord && typeof draft.missionRecord === "object" ? structuredClone(draft.missionRecord) : null;
   missionState.lootTables = Array.isArray(draft.lootTables) ? structuredClone(draft.lootTables) : [];
   missionState.completion = draft.completion && typeof draft.completion === "object" ? structuredClone(draft.completion) : null;
   missionState.missionSecurity = draft.missionSecurity && typeof draft.missionSecurity === "object" ? structuredClone(draft.missionSecurity) : null;
@@ -2544,6 +2579,7 @@ async function loadMissionOverlay(overlay) {
   missionState.environmentProps = Array.isArray(overlay.environmentProps) ? structuredClone(overlay.environmentProps) : [];
   missionState.objectiveTypeID = Number(overlay.objectiveTypeID) || Number(overlay.completion && overlay.completion.objectiveTypeID) || 0;
   missionState.objectiveQuantity = Number(overlay.objectiveQuantity) || Number(overlay.completion && overlay.completion.objectiveQuantity) || 0;
+  missionState.missionRecord = overlay.missionRecord && typeof overlay.missionRecord === "object" ? structuredClone(overlay.missionRecord) : null;
   missionState.lootTables = Array.isArray(overlay.lootTables) ? structuredClone(overlay.lootTables) : [];
   missionState.completion = overlay.completion && typeof overlay.completion === "object" ? structuredClone(overlay.completion) : null;
   missionState.missionSecurity = overlay.missionSecurity && typeof overlay.missionSecurity === "object" ? structuredClone(overlay.missionSecurity) : null;
@@ -2837,6 +2873,7 @@ async function previewPack(write = false) {
   $("#packSummary").innerHTML = `
     <div class="summary-tile"><span>${icon("file-stack")}Templates</span><strong>${pack.templates.length}</strong></div>
     <div class="summary-tile"><span>${icon("crosshair")}Assignments</span><strong>${pack.assignments.length}</strong></div>
+    <div class="summary-tile"><span>${icon("database")}Mission Records</span><strong>${(pack.missionRecords || []).length}</strong></div>
     <div class="summary-tile"><span>${icon("package-open")}NPC Loot Tables</span><strong>${(pack.npcLootTables || []).length}</strong></div>
     <div class="summary-tile"><span>${icon("circle-alert")}Invalid</span><strong>${pack.validation.invalidOverlayCount}</strong></div>
     <div class="summary-tile"><span>${icon(write ? "file-check-2" : "eye")}Output</span><strong>${write ? "Written" : "Preview"}</strong></div>
@@ -2854,10 +2891,11 @@ async function applyPackToStaticTables() {
     target: data.target,
     dataDir: data.dataDir,
     applied: data.applied,
+    appliedMissionRecords: data.appliedMissionRecords,
     backupCount: data.backupCount,
     pack: data.pack,
   }, null, 2);
-  showNotice(`Wrote ${data.applied.length} template(s) to static tables. Run CreateDatabase --force to build them into _local.`);
+  showNotice(`Wrote ${data.applied.length} template(s) and ${(data.appliedMissionRecords || []).length} mission record(s) to static tables. Run CreateDatabase --force to build them into _local.`);
 }
 
 async function loadResearch() {
