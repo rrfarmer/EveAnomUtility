@@ -6,6 +6,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { parseEveSurvival } = require("../src/lib/missionScraper");
 const { buildRooms, buildTemplate } = require("../src/lib/eveSurvivalTemplate");
+const { parseEveUniversityMission } = require("../src/lib/eveUniversityMission");
+const { mergeMissionSources } = require("../src/lib/missionSourceMerge");
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`Assertion failed: ${msg}`);
@@ -74,7 +76,72 @@ function main() {
   assert(gallenteTemplate.siteSceneProfile.roomProfiles.some((room) => room.roomKey === "room:room_1"), "Gallente template emits roomKey profiles");
   assert(gallente.structures.length === 0, "Gallente group NPC rows are not structures");
 
-  process.stdout.write("Scrape test passed (eve-survival Score1gu fixture).\n");
+  const avengeSurvival = parseEveSurvival(`
+    <h1>Avenge a Fallen Comrade, Level 1</h1>
+    Faction: Angel Cartel<br>
+    <h3>First Pocket</h3>
+    Acceleration gate.<br>
+    <h3>Second Pocket</h3>
+    <h4>Group 1</h4>
+    2x Frigate (Gistii Hijacker)<br>
+    <h4>Group 2</h4>
+    3x Frigate (Gistii Rogue)<br>
+    <h4>Group 3</h4>
+    1x Frigate (Gistii Ambusher)<br>
+    <h4>Group 4</h4>
+    8x Frigate (Gistii Hijacker)<br>
+    Mission objective: Habitat at about 75km<br>
+  `, "AvengeaFallenComrade1an");
+  const avengeUniversity = parseEveUniversityMission(`
+    <table>
+      <tr><td class="MssnDtls-label">Objective</td><td class="MssnDtls-data">Destroy the habitat of the pirate leaders.</td></tr>
+      <tr><td class="MssnDtls-label">Best damage to deal</td><td class="MssnDtls-data">Explosive</td></tr>
+      <tr><td class="MssnDtls-label">Damage to resist</td><td class="MssnDtls-data">Explosive / Kinetic</td></tr>
+    </table>
+    <b>Blitz:</b><ul><li>Destroy Habitat, warp out.</li></ul>
+    <h3><span class="mw-headline" id="Pocket">Pocket</span></h3>
+    <p>Warp in on top of Group 1. Group 2-4 aggro individually on attack, or when the habitat is engaged.</p>
+    <div style="font-weight:bold">Structures</div>
+    <table class="wikitable NPC">
+      <tr><td></td><td>1 x Habitat</td><td>Mission completed on destruction</td></tr>
+    </table>
+    <div style="font-weight:bold">Pocket</div>
+    <table class="wikitable NPC">
+      <tr><th colspan="5">Group 2 (20km)</th></tr>
+      <tr><td></td><td>3 x Frigate Gistii Hijacker/Rogue</td></tr>
+      <tr><th colspan="5">Group 3 (35km)</th></tr>
+      <tr><td></td><td>1 x Frigate Gistii Raider/Ambusher</td></tr>
+    </table>
+    <table class="navbox"></table>
+  `, {
+    page_key: "Avenge_a_Fallen_Comrade_(Angel_Cartel)_(Level_1)",
+    url: "https://wiki.eveuniversity.org/Avenge_a_Fallen_Comrade_(Angel_Cartel)_(Level_1)",
+    title: "Avenge a Fallen Comrade",
+    level: 1,
+    enemy_faction: "Angel Cartel",
+  });
+  const mergedAvenge = mergeMissionSources(avengeSurvival, avengeUniversity);
+  assert(mergedAvenge.source === "eve-survival+eve-university", "Avenge merged both mission sources");
+  assert(mergedAvenge.rooms[1].groups.every((group) => group.objective === false), "Avenge NPC groups are not the completion objective");
+  assert(mergedAvenge.rooms[1].groups[1].spawns[0].shipNames.includes("Gistii Hijacker"), "Avenge Group 2 includes Hijacker variant");
+  assert(mergedAvenge.rooms[1].groups[1].spawns[0].shipNames.includes("Gistii Rogue"), "Avenge Group 2 includes Rogue variant");
+  assert(mergedAvenge.rooms[1].groups[2].spawns[0].shipNames.includes("Gistii Raider"), "Avenge Group 3 includes Raider variant");
+  assert(mergedAvenge.objectiveStructures.length === 1 && mergedAvenge.objectiveStructures[0].typeID === 19559, "Avenge Habitat maps to killable structure typeID");
+  assert(mergedAvenge.completion.mode === "objective_target_destroyed", "Avenge completes on objective structure destruction");
+
+  const avengeTemplate = buildTemplate(mergedAvenge);
+  assert(avengeTemplate.siteSceneProfile.gateProfiles[0].destinationRoomKey === "room:room_2", "Avenge gate skips empty gate pocket and targets combat pocket");
+  assert(avengeTemplate.populationHints.completion.completeObjectiveOnEncounterClear === false, "Avenge does not complete from clearing NPC encounters");
+  assert(avengeTemplate.populationHints.completion.objectiveTargets[0].typeID === 19559, "Avenge completion target has Habitat typeID");
+  const objectiveEncounter = avengeTemplate.populationHints.encounters.find((encounter) => encounter.key === "objective_structures:room_2");
+  assert(objectiveEncounter, "Avenge emits explicit objective-structure encounter");
+  assert(objectiveEncounter.trigger === "on_room_active" && objectiveEncounter.roomKey === "room:room_2", "Avenge Habitat spawns when gated pocket activates");
+  assert(objectiveEncounter.spawnEntries[0].entityKind === "killableStructure", "Avenge Habitat spawn is a killable structure");
+  assert(objectiveEncounter.spawnEntries[0].typeID === 19559, "Avenge Habitat spawn entry keeps typeID");
+  assert(avengeTemplate.rooms[1].groups.some((group) => group.groupId === "objective_structures"), "Avenge authored room contains objective structure group");
+  assert(avengeTemplate.objectiveHints.some((hint) => /habitat/i.test(hint.text)), "Avenge objective hint includes Habitat objective");
+
+  process.stdout.write("Scrape test passed (Score fixture + Avenge source merge regression).\n");
 }
 
 try {

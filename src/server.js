@@ -444,7 +444,9 @@ async function routeApi(req, res, url) {
       return true;
     }
     try {
-      const mission = await scrapeEveSurvival(input);
+      const mission = await scrapeEveSurvival(input, {
+        mergeSources: url.searchParams.get("mergeSources") !== "false",
+      });
       sendJson(res, 200, { success: true, mission });
     } catch (error) {
       sendError(res, 502, `Scrape failed: ${error.message}`);
@@ -461,7 +463,9 @@ async function routeApi(req, res, url) {
       return true;
     }
     try {
-      const mission = await scrapeEveSurvival(input);
+      const mission = await scrapeEveSurvival(input, {
+        mergeSources: body.mergeSources !== false,
+      });
       const templateID = `eve-survival:${mission.wakka}`;
       const target = body.target || "static";
       const applyTarget = await resolveApplyTarget({ target, reset: body.reset === true });

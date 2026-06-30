@@ -34,6 +34,21 @@ check("gate combat: acceleration gate to the first pocket", () => {
   assert.equal(v.errors.length, 0, `no errors: ${v.errors.join("; ")}`);
 });
 
+check("gate combat: acceleration gate skips an empty gate-only pocket", () => {
+  const t = buildTemplate({
+    wakka: "AvengeaFallenComrade1an",
+    rooms: [
+      { title: "First Pocket", notes: ["Acceleration gate."], groups: [] },
+      { title: "Second Pocket", groups: [{ spawns: [{ count: 2, shipClass: "Frigate", shipNames: ["Gistii Hijacker"] }] }] },
+    ],
+  });
+  const gates = t.siteSceneProfile.gateProfiles;
+  assert.equal(gates.length, 1, "one acceleration gate");
+  assert.equal(gates[0].destinationRoomKey, "room:room_2", "gate targets the first content pocket");
+  const v = validateMissionTemplate(t);
+  assert.equal(v.errors.length, 0, `no errors: ${v.errors.join("; ")}`);
+});
+
 // Mining: mining params -> mineable rocks + objective quantity EveJS reads.
 check("mining: miningRocks + objectiveQuantity", () => {
   const t = buildTemplate({ wakka: "AsteroidCatastrophe", rooms: [], mining: { objectiveTypeID: 3739, quantity: 5000, rockCount: 6 } });

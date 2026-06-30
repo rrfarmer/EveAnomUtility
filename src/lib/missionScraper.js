@@ -16,6 +16,7 @@
  */
 
 const https = require("node:https");
+const { enrichMissionFromLocalSources } = require("./missionSourceMerge");
 
 // eve-survival wakka faction suffix -> faction name.
 const FACTION_BY_SUFFIX = {
@@ -293,11 +294,11 @@ function parseEveSurvival(html, wakka = "") {
   };
 }
 
-async function scrapeEveSurvival(input) {
+async function scrapeEveSurvival(input, options = {}) {
   const wakka = /^https?:/i.test(input) ? wakkaFromUrl(input) : String(input || "").trim();
   if (!wakka) throw new Error(`Could not determine eve-survival wakka from "${input}".`);
   const html = await httpsGet(eveSurvivalUrl(wakka));
-  return parseEveSurvival(html, wakka);
+  return enrichMissionFromLocalSources(parseEveSurvival(html, wakka), options);
 }
 
 module.exports = {

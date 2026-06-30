@@ -17,10 +17,11 @@ const { validateMissionTemplate } = require("../src/lib/missionTemplateValidator
 const { resolveApplyTarget, backupTemplateOnce, readDungeonAuthority, writeDungeonAuthority } = require("../src/lib/sandbox");
 
 function parseArgs(argv) {
-  const args = { reset: false, target: "static" };
+  const args = { reset: false, target: "static", mergeSources: true };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--reset") args.reset = true;
+    else if (token === "--no-merge") args.mergeSources = false;
     else if (token === "--sandbox") args.target = "sandbox";
     else if (token === "--live") args.target = "live";
     else if (token === "--static") args.target = "static";
@@ -38,6 +39,10 @@ function printMission(mission) {
   process.stdout.write(`\n${mission.title} — ${mission.faction || "?"} (level ${mission.level ?? "?"})\n`);
   if (mission.ewar) process.stdout.write(`  EWAR: ${mission.ewar}\n`);
   if (mission.damageToDeal) process.stdout.write(`  Damage: ${mission.damageToDeal}\n`);
+  if (mission.sourceMerge) {
+    process.stdout.write(`  Merged source: ${mission.sourceMerge.eveUniversityPageKey || "Eve University"}\n`);
+  }
+  if (mission.objectiveText) process.stdout.write(`  Objective: ${mission.objectiveText}\n`);
   mission.rooms.forEach((room, i) => {
     process.stdout.write(`  Pocket ${i + 1}: ${room.title}\n`);
     room.groups.forEach((group) => {
@@ -50,6 +55,9 @@ function printMission(mission) {
   if (mission.structures.length) {
     process.stdout.write(`  Structures: ${mission.structures.map((s) => `${s.count}x ${s.shipClass}`).join(", ")}\n`);
   }
+  if (Array.isArray(mission.objectiveStructures) && mission.objectiveStructures.length) {
+    process.stdout.write(`  Objective structures: ${mission.objectiveStructures.map((s) => `${s.count}x ${s.label || s.shipClass} typeID=${s.typeID || "?"}`).join(", ")}\n`);
+  }
 }
 
 async function main() {
@@ -61,7 +69,7 @@ async function main() {
   }
 
   process.stdout.write(`Scraping eve-survival: ${target}\n`);
-  const mission = await scrapeEveSurvival(target);
+  const mission = await scrapeEveSurvival(target, { mergeSources: args.mergeSources });
   // Combat missions gate-start by default; --gate / --no-gate is an explicit override.
   if (args.gate !== undefined) mission.hasAccelerationGate = args.gate;
   const gated = missionHasAccelerationGate(mission);
