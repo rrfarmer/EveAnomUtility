@@ -49,6 +49,33 @@ check("gate combat: acceleration gate skips an empty gate-only pocket", () => {
   assert.equal(v.errors.length, 0, `no errors: ${v.errors.join("; ")}`);
 });
 
+check("scraped combat fallback: clear all hostiles completes playable missions", () => {
+  const t = buildTemplate({
+    wakka: "Score1gu",
+    rooms: [{ roomId: "room_1", groups: [{ spawns: [{ count: 3, shipClass: "Frigate", shipNames: ["Pithi"] }] }] }],
+  });
+  assert.equal(t.populationHints.completion.mode, "encounter_groups_cleared", "clear-all completion mode");
+  assert.equal(t.populationHints.completion.completeObjectiveOnEncounterClear, true, "encounter clear completes objective");
+  assert.equal(t.adminMetadata.playability.strategy, "fallback_clear_all_hostiles", "fallback playability strategy");
+  assert.ok(t.objectiveHints.some((hint) => /clear all hostile/i.test(hint.text)), "fallback objective hint");
+  assert.ok(t.populationHints.objectiveMarkers.some((marker) => marker.key === "clear_all_hostiles"), "fallback objective marker");
+  const v = validateMissionTemplate(t);
+  assert.equal(v.errors.length, 0, `no errors: ${v.errors.join("; ")}`);
+});
+
+check("scraped noncombat fallback: no hostiles means unplayable and no completion", () => {
+  const t = buildTemplate({
+    wakka: "NoCombat",
+    rooms: [{ title: "Pocket", notes: ["No combat content."], groups: [] }],
+    completion: { mode: "objective_target_destroyed", objectiveTargets: [{ label: "Unknown structure" }] },
+  });
+  assert.equal(t.adminMetadata.playability.playable, false, "marked unplayable");
+  assert.equal(t.adminMetadata.playability.grade, "skipped_noncombat_or_unspawnable", "unplayable grade");
+  assert.equal(t.populationHints.completion, undefined, "no synthetic completion without hostiles");
+  const v = validateMissionTemplate(t);
+  assert.equal(v.errors.length, 0, `no errors: ${v.errors.join("; ")}`);
+});
+
 // Mining: mining params -> mineable rocks + objective quantity EveJS reads.
 check("mining: miningRocks + objectiveQuantity", () => {
   const t = buildTemplate({ wakka: "AsteroidCatastrophe", rooms: [], mining: { objectiveTypeID: 3739, quantity: 5000, rockCount: 6 } });

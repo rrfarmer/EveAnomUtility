@@ -45,6 +45,10 @@ function main() {
   assert(entries.length === 1 && entries[0].count.min === 3 && entries[0].candidateNames.includes("Pithi Saboteur"), "template spawnEntry candidateNames");
   const full = buildTemplate(mission);
   assert(full.templateID === "eve-survival:Score1gu" && full.populationHints.npcEntryCount === 4, `full template (${full.populationHints.npcEntryCount} npc entries)`);
+  assert(full.populationHints.completion.mode === "encounter_groups_cleared", "Score fallback completes when encounters are cleared");
+  assert(full.populationHints.completion.completeObjectiveOnEncounterClear === true, "Score fallback enables encounter-clear completion");
+  assert(full.adminMetadata.playability.grade === "scraped_fallback_clear_all", "Score template is playable via clear-all fallback");
+  assert(full.populationHints.playability.strategy === "fallback_clear_all_hostiles", "Score population hints expose fallback strategy");
 
   const gallente = parseEveSurvival(`
     <h1>The Score, level 1</h1>
@@ -133,6 +137,8 @@ function main() {
   assert(avengeTemplate.siteSceneProfile.gateProfiles[0].destinationRoomKey === "room:room_2", "Avenge gate skips empty gate pocket and targets combat pocket");
   assert(avengeTemplate.populationHints.completion.completeObjectiveOnEncounterClear === false, "Avenge does not complete from clearing NPC encounters");
   assert(avengeTemplate.populationHints.completion.objectiveTargets[0].typeID === 19559, "Avenge completion target has Habitat typeID");
+  assert(avengeTemplate.adminMetadata.playability.strategy === "modeled_objective_target_destroyed", "Avenge playability uses modeled objective target");
+  assert(avengeTemplate.populationHints.playability.strategy === "modeled_objective_target_destroyed", "Avenge population hints expose modeled objective strategy");
   const objectiveEncounter = avengeTemplate.populationHints.encounters.find((encounter) => encounter.key === "objective_structures:room_2");
   assert(objectiveEncounter, "Avenge emits explicit objective-structure encounter");
   assert(objectiveEncounter.trigger === "on_room_active" && objectiveEncounter.roomKey === "room:room_2", "Avenge Habitat spawns when gated pocket activates");

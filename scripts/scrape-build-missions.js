@@ -30,6 +30,7 @@ function parseArgs(argv) {
     mergeSources: true,
     mode: "missing",
     skipEditLinks: true,
+    skipUnplayable: true,
     strict: false,
     reset: false,
     levels: new Set([1, 2, 3, 4, 5]),
@@ -49,6 +50,7 @@ function parseArgs(argv) {
     else if (token === "--patch-existing" || token === "--update-existing") args.mode = "patch";
     else if (token === "--replace-existing") args.mode = "replace";
     else if (token === "--no-merge") args.mergeSources = false;
+    else if (token === "--include-unplayable") args.skipUnplayable = false;
     else if (token === "--strict") args.strict = true;
     else if (token === "--include-edit-links") args.skipEditLinks = false;
     else if (token === "--reset") args.reset = true;
@@ -118,6 +120,7 @@ function usage() {
     "  --exclude-template A,B  Skip one or more template IDs.",
     "  --limit N               Stop after N generated/updated templates.",
     "  --include-edit-links    Include bad source links whose wakka contains /edit.",
+    "  --include-unplayable    Export scraped pages even when no playable objective can be built.",
     "  --no-merge              Disable Eve University local-cache enrichment.",
     "  --strict                Treat validation warnings as skips.",
     "  --sandbox|--live|--static or --target <target>",
@@ -204,6 +207,12 @@ function countMissionContent(mission) {
   return { rooms: (mission.rooms || []).length, groups, spawns };
 }
 
+function templatePlayability(template) {
+  return (template.adminMetadata && template.adminMetadata.playability) ||
+    (template.populationHints && template.populationHints.playability) ||
+    null;
+}
+
 async function maybeBackup(applyTarget, templateID, template, args) {
   if (!args.apply || applyTarget.target === "sandbox" || !template) return null;
   return backupTemplateOnce(templateID, template);
@@ -232,6 +241,7 @@ async function main() {
     rawMissing: [],
     invalid: [],
     warnings: [],
+    unplayableSkipped: [],
     inserted: [],
     patched: [],
     replaced: [],
@@ -260,7 +270,28 @@ async function main() {
       ? patchExistingTemplate(JSON.parse(JSON.stringify(existing)), mission)
       : buildTemplate(mission);
     const validation = validateMissionTemplate(nextTemplate);
-    if (validation.errors.length > 0 || (args.strict && validation.warnings.length > 0)) {
+    if (validation.errors.length > 0) {
+      summary.invalid.push({
+        wakka: record.wakka,
+        templateID,
+        errors: validation.errors,
+        warnings: validation.warnings,
+      });
+      continue;
+    }
+    const playability = templatePlayability(nextTemplate);
+    if (args.skipUnplayable && playability && playability.playable === false) {
+      summary.unplayableSkipped.push({
+        wakka: record.wakka,
+        templateID,
+        title: mission.title || record.title,
+        level: mission.level || record.level,
+        playability: playability.strategy || playability.grade || "",
+        gaps: Array.isArray(playability.gaps) ? playability.gaps : [],
+      });
+      continue;
+    }
+    if (args.strict && validation.warnings.length > 0) {
       summary.invalid.push({
         wakka: record.wakka,
         templateID,
@@ -289,6 +320,7 @@ async function main() {
       faction: mission.faction || record.faction || "",
       merged: Boolean(mission.sourceMerge),
       objectiveStructures: (mission.objectiveStructures || []).length,
+      playability: playability ? playability.strategy || playability.grade || "" : "",
       ...content,
     };
     if (!existing) summary.inserted.push(result);
@@ -315,6 +347,7 @@ function printRows(label, rows, limit = 20) {
       `  ${row.templateID || row.wakka}  L${row.level || "?"}  ${row.title || row.error || ""}` +
       (row.merged ? "  [merged]" : "") +
       (row.objectiveStructures ? `  objectives=${row.objectiveStructures}` : "") +
+      (row.playability ? `  ${row.playability}` : "") +
       "\n",
     );
   }
@@ -334,6 +367,7 @@ function printSummary(summary, args, applyTarget, selectedCount) {
       `  generated/updated: ${changed} (${summary.inserted.length} inserted, ${summary.patched.length} patched, ${summary.replaced.length} replaced)`,
       `  source-merged with Eve University: ${summary.merged}`,
       `  raw cache missing: ${summary.rawMissing.length}`,
+      `  unplayable skipped: ${summary.unplayableSkipped.length}`,
       `  invalid/skipped: ${summary.invalid.length}`,
       `  warnings: ${summary.warnings.length}`,
     ].join("\n"),
@@ -341,6 +375,7 @@ function printSummary(summary, args, applyTarget, selectedCount) {
   printRows("Inserted", summary.inserted);
   printRows("Patched", summary.patched);
   printRows("Replaced", summary.replaced);
+  printRows("Unplayable skipped", summary.unplayableSkipped);
   if (summary.rawMissing.length) {
     process.stdout.write(`\nRaw cache missing (${summary.rawMissing.length}):\n`);
     for (const row of summary.rawMissing.slice(0, 20)) process.stdout.write(`  ${row.wakka}: ${row.error}\n`);

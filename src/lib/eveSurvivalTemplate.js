@@ -202,6 +202,13 @@ function buildMiningHints(mission) {
   };
 }
 
+function hasMiningObjective(mission) {
+  const mining = mission && mission.mining;
+  const oreTypeID = mining ? Number(mining.oreTypeID || mining.objectiveTypeID) || 0 : 0;
+  const quantity = mining ? Math.max(0, Math.trunc(Number(mining.quantity) || 0)) : 0;
+  return oreTypeID > 0 && quantity > 0;
+}
+
 function roomKeyForIndex(rooms, index) {
   const room = rooms[index] || rooms[0];
   return room ? `room:${room.roomId}` : "room:entry";
@@ -252,11 +259,31 @@ function buildObjectiveStructureEncounters(rooms, mission) {
   });
 }
 
-function buildCompletion(mission) {
+function isObjectiveTargetCompletion(completion) {
+  return /objective_targets?_destroyed|destroy_objective_targets?/i.test(String(completion && (completion.mode || completion.completionMode) || ""));
+}
+
+function buildClearAllCompletion() {
+  return {
+    mode: "encounter_groups_cleared",
+    completeObjectiveOnEncounterClear: true,
+    despawnDelaySeconds: 0,
+    fallback: "clear_all_hostiles",
+  };
+}
+
+function buildCompletion(rooms, mission) {
+  const counts = countSpawnEntries(rooms || []);
+  const spawnableObjectiveStructures = expandedObjectiveStructures(mission)
+    .filter((structure) => Number(structure.typeID) > 0);
+
   if (mission && mission.completion && typeof mission.completion === "object") {
+    if (isObjectiveTargetCompletion(mission.completion) && spawnableObjectiveStructures.length <= 0) {
+      return counts.npc > 0 ? buildClearAllCompletion() : null;
+    }
     return clone(mission.completion);
   }
-  const structures = expandedObjectiveStructures(mission);
+  const structures = spawnableObjectiveStructures;
   if (structures.length <= 0) return null;
   return {
     mode: "objective_target_destroyed",
@@ -270,8 +297,74 @@ function buildCompletion(mission) {
   };
 }
 
-function buildObjectiveMarkers(mission) {
-  const structures = expandedObjectiveStructures(mission);
+function buildPlayableFallbackCompletion(rooms, mission) {
+  if (hasMiningObjective(mission)) return null;
+  const completion = buildCompletion(rooms, mission);
+  if (completion) return completion;
+  const counts = countSpawnEntries(rooms || []);
+  return counts.npc > 0 ? buildClearAllCompletion() : null;
+}
+
+function buildPlayabilityProfile(rooms, mission, completion = null) {
+  const counts = countSpawnEntries(rooms || []);
+  const modeledObjectiveStructures = expandedObjectiveStructures(mission)
+    .filter((structure) => Number(structure.typeID) > 0);
+  const effectiveCompletion = completion || buildPlayableFallbackCompletion(rooms, mission);
+  const commonScrapeGaps = [
+    "exact_positions_missing",
+    "exact_type_ids_missing",
+    "triggers_not_exact",
+    "notifications_not_exact",
+  ];
+
+  if (hasMiningObjective(mission)) {
+    return {
+      playable: true,
+      grade: "authored_mining_objective",
+      strategy: "mine_quantity",
+      source: "eve_anom_utility",
+      gaps: ["not_scraped_combat"],
+    };
+  }
+
+  if (effectiveCompletion && isObjectiveTargetCompletion(effectiveCompletion) && modeledObjectiveStructures.length > 0) {
+    return {
+      playable: true,
+      grade: "scraped_objective_modeled",
+      strategy: "modeled_objective_target_destroyed",
+      source: "eve_anom_utility",
+      gaps: commonScrapeGaps,
+    };
+  }
+
+  if (effectiveCompletion && String(effectiveCompletion.mode || "") === "encounter_groups_cleared" && counts.npc > 0) {
+    return {
+      playable: true,
+      grade: "scraped_fallback_clear_all",
+      strategy: "fallback_clear_all_hostiles",
+      source: "eve_anom_utility",
+      gaps: [
+        "objective_simplified_to_clear_all_hostiles",
+        ...commonScrapeGaps,
+      ],
+    };
+  }
+
+  return {
+    playable: false,
+    grade: "skipped_noncombat_or_unspawnable",
+    strategy: "no_playable_scraped_objective",
+    source: "eve_anom_utility",
+    gaps: [
+      counts.npc <= 0 ? "no_spawnable_hostiles" : null,
+      "objective_not_modeled",
+    ].filter(Boolean),
+  };
+}
+
+function buildObjectiveMarkers(mission, playability = null) {
+  const structures = expandedObjectiveStructures(mission)
+    .filter((structure) => Number(structure.typeID) > 0);
   if (structures.length > 0) {
     return structures.map((structure) => ({
       role: "objective",
@@ -279,13 +372,18 @@ function buildObjectiveMarkers(mission) {
       label: `Destroy ${structure.label || structure.shipClass || "objective structure"}`,
     }));
   }
+  if (playability && playability.strategy === "fallback_clear_all_hostiles") {
+    return [{ role: "objective", key: "clear_all_hostiles", label: "Clear all hostile forces" }];
+  }
   return mission && mission.objectiveText
     ? [{ role: "objective", key: "mission_objective", label: mission.objectiveText }]
     : [];
 }
 
 function buildObjectiveVisualProfiles(rooms, mission) {
-  return expandedObjectiveStructures(mission).map((structure) => {
+  return expandedObjectiveStructures(mission)
+    .filter((structure) => Number(structure.typeID) > 0)
+    .map((structure) => {
     const roomIndex = roomIndexForObjectiveStructure(rooms, structure);
     return {
       role: "objective",
@@ -303,9 +401,10 @@ function buildObjectiveVisualProfiles(rooms, mission) {
 function buildPopulationHints(rooms, mission) {
   const counts = countSpawnEntries(rooms);
   const encounters = buildObjectiveStructureEncounters(rooms, mission);
-  const completion = buildCompletion(mission);
-  const objectiveMarkers = buildObjectiveMarkers(mission);
-  const objectiveHints = buildObjectiveHints(mission);
+  const completion = buildPlayableFallbackCompletion(rooms, mission);
+  const playability = buildPlayabilityProfile(rooms, mission, completion);
+  const objectiveMarkers = buildObjectiveMarkers(mission, playability);
+  const objectiveHints = buildObjectiveHints(mission, playability);
   return {
     source: "eve_anom_utility",
     roomCount: rooms.length,
@@ -317,12 +416,16 @@ function buildPopulationHints(rooms, mission) {
     ...(encounters.length > 0 ? { encounters } : {}),
     ...(completion ? { completion } : {}),
     ...(objectiveMarkers.length > 0 ? { objectiveMarkers } : {}),
+    playability,
     ...buildMiningHints(mission),
   };
 }
 
-function buildObjectiveHints(mission) {
+function buildObjectiveHints(mission, playability = null) {
   const hints = [];
+  if (playability && playability.strategy === "fallback_clear_all_hostiles") {
+    hints.push({ kind: "fallback", text: "Clear all hostile forces.", source: "playable_fallback" });
+  }
   if (mission.objectiveText) hints.push({ kind: "objective", text: mission.objectiveText, source: "eve-university" });
   if (mission.blitz) {
     hints.push({
@@ -395,6 +498,7 @@ function buildRoomProfiles(rooms, mission) {
   }
   rooms.forEach((room, index) => {
     const objectiveKeys = expandedObjectiveStructures(mission)
+      .filter((structure) => Number(structure.typeID) > 0)
       .filter((structure) => roomIndexForObjectiveStructure(rooms, structure) === index)
       .map((structure) => structure.key)
       .filter(Boolean);
@@ -412,13 +516,14 @@ function buildRoomProfiles(rooms, mission) {
 // Patch an EXISTING eve-survival template: replace spawn-bearing rooms + counts, preserve everything else.
 function patchExistingTemplate(target, mission) {
   const rooms = buildRooms(mission);
+  const playability = buildPlayabilityProfile(rooms, mission);
   target.source = mission.source || target.source || "eve-survival";
   target.sourceMissionID = mission.wakka ? `eve-survival:${mission.wakka}` : target.sourceMissionID;
   target.title = mission.title || target.title;
   target.missionLevel = mission.level || target.missionLevel || null;
   target.rooms = rooms;
   target.populationHints = buildPopulationHints(rooms, mission);
-  target.objectiveHints = buildObjectiveHints(mission);
+  target.objectiveHints = buildObjectiveHints(mission, playability);
   // Author the acceleration gate (or clear it) so the gate-first flow matches the scrape.
   target.siteSceneProfile = {
     ...(target.siteSceneProfile || {}),
@@ -445,6 +550,7 @@ function patchExistingTemplate(target, mission) {
     sourceUrl: mission.url || "",
     sourceUrls: Array.isArray(mission.sourceLinks) ? mission.sourceLinks : undefined,
     sourceMerge: mission.sourceMerge || undefined,
+    playability,
   };
   return target;
 }
@@ -453,6 +559,7 @@ function patchExistingTemplate(target, mission) {
 function buildTemplate(mission) {
   const wakka = mission.wakka || "Mission";
   const rooms = buildRooms(mission);
+  const playability = buildPlayabilityProfile(rooms, mission);
   return {
     templateID: `eve-survival:${wakka}`,
     source: mission.source || "eve-survival",
@@ -476,7 +583,7 @@ function buildTemplate(mission) {
     },
     rooms,
     missionParts: [],
-    objectiveHints: buildObjectiveHints(mission),
+    objectiveHints: buildObjectiveHints(mission, playability),
     triggerHints: [],
     advisory: {
       damageToDeal: mission.damageToDeal || "",
@@ -499,6 +606,7 @@ function buildTemplate(mission) {
       sourceUrl: mission.url || "",
       sourceUrls: Array.isArray(mission.sourceLinks) ? mission.sourceLinks : undefined,
       sourceMerge: mission.sourceMerge || undefined,
+      playability,
     },
   };
 }
