@@ -22,6 +22,8 @@ coverage/
 dist/
 build/
 .cache/
+__pycache__/
+*.py[cod]
 playwright-report/
 test-results/
 
