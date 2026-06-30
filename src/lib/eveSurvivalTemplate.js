@@ -10,6 +10,7 @@
  */
 
 function spawnRaw(spawn) {
+  if (spawn && spawn.raw) return spawn.raw;
   return `${spawn.count}x ${spawn.shipClass} (${(spawn.shipNames || []).join("/")})`;
 }
 
@@ -21,7 +22,7 @@ function buildSpawnEntry(spawn, distance) {
     entityKind: spawn.entityKind || "npc",
     label: spawn.shipClass || "",
     candidateNames: Array.isArray(spawn.shipNames) ? spawn.shipNames.slice() : [],
-    tags: [],
+    tags: Array.isArray(spawn.tags) ? spawn.tags.slice() : [],
     distance: distance || null,
   };
 }
@@ -41,9 +42,9 @@ function buildRooms(mission) {
       distance: group.distance || null,
       objective: group.objective === true,
       spawnEntries: (group.spawns || []).map((spawn) => buildSpawnEntry(spawn, null)),
-      notes: [],
+      notes: Array.isArray(group.notes) ? group.notes.slice() : [],
     })),
-    notes: [],
+    notes: Array.isArray(room.notes) ? room.notes.slice() : [],
   }));
 }
 
@@ -136,6 +137,30 @@ function buildGateProfiles(rooms, mission) {
   }];
 }
 
+function buildRoomProfiles(rooms, mission) {
+  const gated = missionHasAccelerationGate(mission);
+  const profiles = [];
+  if (gated) {
+    profiles.push({
+      roomKey: "room:entry",
+      label: "Entry Pocket",
+      source: "eve_anom_utility",
+      initialState: "active",
+      objectiveKeys: [],
+    });
+  }
+  rooms.forEach((room, index) => {
+    profiles.push({
+      roomKey: `room:${room.roomId}`,
+      label: room.title || `Pocket ${index + 1}`,
+      source: "mission_room",
+      initialState: gated || index > 0 ? "pending" : "active",
+      objectiveKeys: [],
+    });
+  });
+  return profiles;
+}
+
 // Patch an EXISTING eve-survival template: replace spawn-bearing rooms + counts, preserve everything else.
 function patchExistingTemplate(target, mission) {
   const rooms = buildRooms(mission);
@@ -145,6 +170,7 @@ function patchExistingTemplate(target, mission) {
   // Author the acceleration gate (or clear it) so the gate-first flow matches the scrape.
   target.siteSceneProfile = {
     ...(target.siteSceneProfile || {}),
+    roomProfiles: buildRoomProfiles(rooms, mission),
     gateProfiles: buildGateProfiles(rooms, mission),
   };
   if (target.spaceType) target.spaceType.hasAccelerationGates = missionHasAccelerationGate(mission);
@@ -199,7 +225,7 @@ function buildTemplate(mission) {
     populationHints: buildPopulationHints(rooms, mission),
     siteSceneProfile: {
       source: "eve_anom_utility",
-      roomProfiles: rooms.map((room) => ({ key: `room:${room.roomId}`, label: room.title })),
+      roomProfiles: buildRoomProfiles(rooms, mission),
       gateProfiles: buildGateProfiles(rooms, mission),
       structureProfiles: [],
       objectiveVisualProfiles: [],
@@ -211,6 +237,7 @@ function buildTemplate(mission) {
 module.exports = {
   buildRooms,
   buildPopulationHints,
+  buildRoomProfiles,
   buildTemplate,
   patchExistingTemplate,
   missionHasAccelerationGate,

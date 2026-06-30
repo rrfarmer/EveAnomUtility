@@ -44,6 +44,36 @@ function main() {
   const full = buildTemplate(mission);
   assert(full.templateID === "eve-survival:Score1gu" && full.populationHints.npcEntryCount === 4, `full template (${full.populationHints.npcEntryCount} npc entries)`);
 
+  const gallente = parseEveSurvival(`
+    <h1>The Score, level 1</h1>
+    Faction: Gallente Federation<br>
+    Damage dealt: Therm, Kin<br>
+    <h3>Pocket</h3>
+    <h4>Group 1 - 40km</h4>
+    6x Federation Clavis (Atron)<br>
+    2x Federation Hoplon (Incursus)<br>
+    <h4>Group 2 - 45km</h4>
+    1x Federation Libertus (Atron) (Damp)<br>
+    1x Federation Manicu (Atron) (Damp)<br>
+    1x Federation Pelekus (Catalyst)<br>
+    Group 1+2 aggro together<br>
+    <h5>Blitz</h5>
+    Kill Group 1 and 2
+  `, "Score1ga");
+  assert(gallente.rooms[0].groups[0].distance.minMeters === 40000, "Gallente Group 1 @40km, not 1-40km");
+  assert(gallente.rooms[0].groups[0].spawns.length === 2, "Gallente direct NPC-name rows become group spawns");
+  assert(gallente.rooms[0].groups[0].spawns[0].entityKind === "npc", "Gallente direct NPC-name row is NPC");
+  assert(gallente.rooms[0].groups[0].spawns[0].shipNames.includes("Federation Clavis"), "Gallente NPC candidate keeps exact NPC name");
+  assert(gallente.rooms[0].groups[1].spawns.length === 3, "Gallente annotated NPC rows are parsed");
+  assert(gallente.rooms[0].groups[1].spawns[0].tags.includes("sensorDamp"), "Gallente Damp annotation becomes sensorDamp tag");
+  assert(gallente.rooms[0].groups[1].notes.includes("Group 1+2 aggro together"), "Gallente free-text group note is preserved");
+  const gallenteTemplate = buildTemplate(gallente);
+  assert(gallenteTemplate.populationHints.npcEntryCount === 5, `Gallente template count (${gallenteTemplate.populationHints.npcEntryCount})`);
+  assert(gallenteTemplate.rooms[0].groups[1].spawnEntries[0].tags.includes("sensorDamp"), "Gallente template preserves Damp tag");
+  assert(gallenteTemplate.rooms[0].groups[1].notes.includes("Group 1+2 aggro together"), "Gallente template preserves group note");
+  assert(gallenteTemplate.siteSceneProfile.roomProfiles.some((room) => room.roomKey === "room:room_1"), "Gallente template emits roomKey profiles");
+  assert(gallente.structures.length === 0, "Gallente group NPC rows are not structures");
+
   process.stdout.write("Scrape test passed (eve-survival Score1gu fixture).\n");
 }
 

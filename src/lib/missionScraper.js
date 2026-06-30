@@ -95,7 +95,7 @@ function tokenize(html) {
   // Cut from the first <h1 to the comments/footer to avoid nav chrome.
   const startIdx = html.search(/<h1[\s>]/i);
   let body = startIdx >= 0 ? html.slice(startIdx) : html;
-  const endIdx = body.search(/<div[^>]*class="(commentsContainer|footer)"|id="footer"/i);
+  const endIdx = body.search(/<hr\s*\/?>\s*<a[^>]+wakka=Category|<div[^>]*(?:class="(?:commentsContainer|footer)"|id="(?:comments|footer)")/i);
   if (endIdx > 0) body = body.slice(0, endIdx);
 
   // Mark headings, then convert line breaks/paragraphs to newlines.
@@ -116,11 +116,18 @@ function tokenize(html) {
 }
 
 function parseDistanceMeters(text) {
-  const match = String(text || "").match(/\(?\s*(\d+)\s*(?:-\s*(\d+)\s*)?km/i);
+  const source = String(text || "");
+  const parenthesized = source.match(/\(\s*(\d+)\s*(?:-\s*(\d+)\s*)?km\s*\)/i);
+  if (parenthesized) {
+    const min = Number(parenthesized[1]) * 1000;
+    const max = parenthesized[2] ? Number(parenthesized[2]) * 1000 : min;
+    return { minMeters: min, maxMeters: max, raw: parenthesized[0].trim() };
+  }
+  const match = source.match(/(?:^|[-:@]|\bat\s+)\s*(\d+)\s*(?:-\s*(\d+)\s*)?km\b/i);
   if (!match) return null;
   const min = Number(match[1]) * 1000;
   const max = match[2] ? Number(match[2]) * 1000 : min;
-  return { minMeters: min, maxMeters: max, raw: match[0].trim() };
+  return { minMeters: min, maxMeters: max, raw: `${match[1]}${match[2] ? `-${match[2]}` : ""}km` };
 }
 
 const NPC_HULL_CLASSES = new Set([
@@ -129,17 +136,54 @@ const NPC_HULL_CLASSES = new Set([
   "elite frigate", "elite cruiser", "heavy assault", "officer",
 ]);
 
-// "3x Frigate (Pithi Saboteur/Pithi Despoiler)" -> { count, shipClass, shipNames, entityKind }
+function splitNames(value) {
+  return String(value || "")
+    .split(/[\/,]|\bor\b|\band\b/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function isNpcHullClass(value) {
+  const cls = String(value || "").toLowerCase().trim();
+  return NPC_HULL_CLASSES.has(cls) || NPC_HULL_CLASSES.has(cls.replace(/s$/, ""));
+}
+
+function normalizeSpawnTag(value) {
+  const tag = String(value || "").trim();
+  if (!tag) return "";
+  if (/damp/i.test(tag)) return "sensorDamp";
+  if (/scram|warp\s*scram|point/i.test(tag)) return "warpScramble";
+  if (/web/i.test(tag)) return "web";
+  if (/jam|ecm/i.test(tag)) return "jam";
+  if (/neut/i.test(tag)) return "energyNeutralizer";
+  return tag.replace(/\s+/g, "_").replace(/[^A-Za-z0-9_:-]/g, "");
+}
+
+function parseSpawnTags(value) {
+  const tags = [];
+  for (const match of String(value || "").matchAll(/\(([^)]+)\)/g)) {
+    const tag = normalizeSpawnTag(match[1]);
+    if (tag && !tags.includes(tag)) tags.push(tag);
+  }
+  return tags;
+}
+
+// "3x Frigate (Pithi Saboteur/Pithi Despoiler)" or
+// "6x Federation Clavis (Atron)" -> { count, shipClass, shipNames, entityKind }
 function parseSpawnLine(text) {
-  const match = String(text).match(/^(\d+)\s*x?\s+([A-Za-z][A-Za-z .\/-]*?)\s*\(([^)]+)\)\s*$/);
+  const raw = String(text || "").replace(/\s+/g, " ").trim();
+  const match = raw.match(/^(\d+)\s*x?\s+([A-Za-z][A-Za-z .\/-]*?)\s*\(([^)]+)\)\s*(.*)$/);
   if (!match) return null;
   const count = Number(match[1]) || 1;
   const shipClass = match[2].trim();
-  const shipNames = match[3].split("/").map((s) => s.trim()).filter(Boolean);
+  const hullOrNames = splitNames(match[3]);
+  const trailing = match[4].trim();
+  if (trailing && !/^(?:\([^)]+\)\s*)+$/.test(trailing)) return null;
+  const tags = parseSpawnTags(trailing);
   // NPC if the hull class is a recognised ship class (singular or plural); else a structure/prop.
-  const cls = shipClass.toLowerCase();
-  const isNpc = NPC_HULL_CLASSES.has(cls) || NPC_HULL_CLASSES.has(cls.replace(/s$/, ""));
-  return { count, shipClass, shipNames, entityKind: isNpc ? "npc" : "structure" };
+  const isNpc = isNpcHullClass(shipClass);
+  const shipNames = isNpc ? hullOrNames : [shipClass, ...hullOrNames];
+  return { raw, count, shipClass, shipNames, entityKind: isNpc ? "npc" : "structure", tags };
 }
 
 // "Kill Group 1 and 2" / "Groups 1, 2 and 3" -> [1, 2, ...]
@@ -171,15 +215,15 @@ function parseEveSurvival(html, wakka = "") {
 
   for (const token of tokens) {
     if (token.kind === "h3") {
-      currentRoom = { title: token.text, gateHint: /gate|accel/i.test(token.text) ? token.text : null, groups: [] };
+      currentRoom = { title: token.text, gateHint: /gate|accel/i.test(token.text) ? token.text : null, groups: [], notes: [] };
       rooms.push(currentRoom);
       currentGroup = null;
       section = "spawns";
       continue;
     }
     if (token.kind === "h4") {
-      if (!currentRoom) { currentRoom = { title: "Pocket", gateHint: null, groups: [] }; rooms.push(currentRoom); }
-      currentGroup = { title: token.text, distance: parseDistanceMeters(token.text), spawns: [], objective: false };
+      if (!currentRoom) { currentRoom = { title: "Pocket", gateHint: null, groups: [], notes: [] }; rooms.push(currentRoom); }
+      currentGroup = { title: token.text, distance: parseDistanceMeters(token.text), spawns: [], objective: false, notes: [] };
       currentRoom.groups.push(currentGroup);
       section = "spawns";
       continue;
@@ -193,18 +237,22 @@ function parseEveSurvival(html, wakka = "") {
 
     if (section === "blitz") { blitzText += ` ${token.text}`; continue; }
     const spawn = parseSpawnLine(token.text);
-    if (!spawn) continue;
-    if (section === "structures" || spawn.entityKind === "structure") {
+    if (!spawn) {
+      if (currentGroup) currentGroup.notes.push(token.text);
+      else if (currentRoom) currentRoom.notes.push(token.text);
+      continue;
+    }
+    if (section === "structures") {
       structures.push(spawn);
       continue;
     }
     if (!currentGroup) {
       // spawns before any group heading -> implicit single group in the room
-      if (!currentRoom) { currentRoom = { title: "Pocket", gateHint: null, groups: [] }; rooms.push(currentRoom); }
-      currentGroup = { title: "Group 1", distance: null, spawns: [], objective: false };
+      if (!currentRoom) { currentRoom = { title: "Pocket", gateHint: null, groups: [], notes: [] }; rooms.push(currentRoom); }
+      currentGroup = { title: "Group 1", distance: null, spawns: [], objective: false, notes: [] };
       currentRoom.groups.push(currentGroup);
     }
-    currentGroup.spawns.push(spawn);
+    currentGroup.spawns.push({ ...spawn, entityKind: "npc" });
   }
 
   // Blitz "Kill Group 1 and 2" -> objective flags.
