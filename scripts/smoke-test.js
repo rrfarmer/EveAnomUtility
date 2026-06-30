@@ -215,6 +215,171 @@ async function main() {
     }
     const miningOverlayDelete = await request(server, `/api/overlays/${encodeURIComponent(miningOverlay.id)}`, { method: "DELETE" });
     if (miningOverlayDelete.statusCode !== 200) throw new Error(`/api/overlays delete Mining failed: ${miningOverlayDelete.body}`);
+
+    const exactCombatTemplateID = `admin:smoke:exact-combat:${Date.now()}`;
+    const exactCombatSeed = {
+      templateID: "client-dungeon:999001",
+      source: "golden_log_combat_mission",
+      sourcePriority: 100,
+      sourceConfidence: { label: "Golden TQ Log", score: 100 },
+      siteFamily: "mission",
+      siteKind: "encounter",
+      sourceDungeonID: 999001,
+      resourceComposition: { oreTypeIDs: [1230], gasTypeIDs: [], iceTypeIDs: [], hasAnyResources: true },
+      populationHints: {
+        source: "golden_log_combat_mission",
+        siteFamily: "mission",
+        siteKind: "encounter",
+        exactContentCaps: { maxSpawnEntries: 96, maxEnvironmentProps: 96 },
+        completion: { mode: "encounter_group_cleared", encounterKeys: ["wave_1"], despawnDelaySeconds: 0 },
+        completionTriggerMessages: [{ messageType: 2, messageID: 123879 }],
+        completionTriggerAudio: [{ dungeonID: 999001, audio: "dungeon_trigger_uihcasinopen_play" }],
+        resources: { oreTypeIDs: [1230], gasTypeIDs: [], iceTypeIDs: [] },
+        objectiveMarkers: [{ role: "objective", label: "Destroy command structure", key: "destroy_command_structure" }],
+      },
+      siteSceneProfile: {
+        source: "golden_log_combat_mission",
+        confidence: { label: "Golden TQ Log", score: 100 },
+        evidence: ["smoke_exact_combat"],
+        roomProfiles: [{ roomKey: "room:entry", label: "Entry Pocket", initialState: "active" }],
+        gateProfiles: [{
+          gateKey: "gate:entry",
+          label: "Acceleration Gate",
+          typeID: 17831,
+          destinationRoomKey: "room:entry",
+          ownerID: 1,
+          dunObjectID: 777001,
+          dunObjectNameID: 888001,
+          nameID: 999001,
+          positionOffset: { x: 1000, y: 0, z: 0 },
+          dunRotation: [0, 1.5708, 0],
+          suppressSlimName: true,
+        }],
+        objectiveVisualProfiles: [{ role: "objective", label: "Destroy command structure", key: "destroy_command_structure" }],
+      },
+    };
+    const exactCombatOverlay = {
+      id: `overlay_smoke_exact_combat_${Date.now()}`,
+      title: "Smoke Exact Combat",
+      templateID: exactCombatTemplateID,
+      contentFamily: "mission",
+      delivery: "mission_private",
+      kind: "mission_combat",
+      missionType: "combat",
+      status: "draft",
+      baseTemplateID: "",
+      templateSeed: exactCombatSeed,
+      spawnScope: {
+        mode: "any_eligible",
+        securityBands: ["highsec", "lowsec", "nullsec", "wormhole"],
+        maxConcurrentPerSystem: 1,
+        weight: 1,
+        respawnMinutes: 60,
+        slotCount: 1,
+      },
+      placement: { anchorKind: "system" },
+      scanner: { visibility: "private_mission", signalStrength: null },
+      rooms: exactCombatSeed.siteSceneProfile.roomProfiles,
+      gates: exactCombatSeed.siteSceneProfile.gateProfiles,
+      encounters: [{
+        key: "wave_1",
+        label: "Wave 1",
+        exact: true,
+        count: 2,
+        amount: 2,
+        trigger: "on_load",
+        roomKey: "room:entry",
+        maxSpawnEntries: 2,
+        triggerMessages: [{ messageType: 1, messageID: 123913 }],
+        triggerAudio: [{ dungeonID: 999001, audio: "dungeon_trigger_uiwarning01_play" }],
+        spawnEntries: [
+          {
+            entityKind: "npc",
+            typeID: 10001,
+            ownerID: 500010,
+            dunObjectID: 700001,
+            dunObjectNameID: 800001,
+            nameID: 900001,
+            objectiveTargetGroup: 1,
+            positionOffset: { x: 0, y: 1000, z: 0 },
+            dunRotation: [0, 0, 0],
+            suppressSlimName: true,
+          },
+          {
+            entityKind: "killableStructure",
+            typeID: 20001,
+            ownerID: 500011,
+            dunObjectID: 700002,
+            dunObjectNameID: 800002,
+            nameID: 900002,
+            objectiveTargetGroup: 2,
+            positionOffset: { x: 0, y: 2000, z: 0 },
+            dunRotation: [0, 0.5, 0],
+            suppressSlimGraphicID: true,
+          },
+        ],
+      }],
+      miningRocks: [{
+        exact: true,
+        typeID: 1230,
+        oreTypeID: 1230,
+        count: 1,
+        quantity: 5000,
+        ownerID: 600001,
+        dunObjectID: 700003,
+        dunObjectNameID: 800003,
+        nameID: 900003,
+        positionOffset: { x: 5000, y: 0, z: 0 },
+        dunRotation: [0, 0, 1],
+      }],
+      environmentProps: [{
+        exact: true,
+        key: "prop:smoke",
+        typeID: 30001,
+        ownerID: 600002,
+        dunObjectID: 700004,
+        dunObjectNameID: 800004,
+        nameID: 900004,
+        objectiveTargetGroup: 3,
+        positionOffset: { x: 0, y: 0, z: 5000 },
+        dunRotation: [1, 0, 0],
+        suppressSlimName: true,
+        suppressSlimGraphicID: true,
+      }],
+      completion: exactCombatSeed.populationHints.completion,
+    };
+    const exactCombatValidation = await request(server, "/api/validate", {
+      method: "POST",
+      body: exactCombatOverlay,
+    });
+    if (exactCombatValidation.statusCode !== 200 || !JSON.parse(exactCombatValidation.body).validation.ok) {
+      throw new Error(`exact combat overlay validation failed: ${exactCombatValidation.body}`);
+    }
+    const savedExactCombat = await request(server, "/api/overlays", {
+      method: "POST",
+      body: exactCombatOverlay,
+    });
+    if (savedExactCombat.statusCode !== 200) throw new Error(`/api/overlays save exact combat failed: ${savedExactCombat.body}`);
+    const exactCombatPack = await request(server, "/api/template-pack");
+    if (exactCombatPack.statusCode !== 200) throw new Error(`/api/template-pack exact combat failed: ${exactCombatPack.body}`);
+    const parsedExactCombatPack = JSON.parse(exactCombatPack.body);
+    const generatedExactCombat = parsedExactCombatPack.pack.templates.find((template) => template.templateID === exactCombatTemplateID);
+    if (
+      !generatedExactCombat ||
+      generatedExactCombat.populationHints.source !== "golden_log_combat_mission" ||
+      generatedExactCombat.populationHints.exactContentCaps.maxSpawnEntries !== 96 ||
+      generatedExactCombat.populationHints.encounters[0].spawnEntries[1].entityKind !== "killableStructure" ||
+      generatedExactCombat.populationHints.encounters[0].triggerMessages[0].messageID !== 123913 ||
+      generatedExactCombat.populationHints.completionTriggerMessages[0].messageID !== 123879 ||
+      generatedExactCombat.siteSceneProfile.gateProfiles[0].nameID !== 999001 ||
+      generatedExactCombat.populationHints.environmentProps[0].nameID !== 900004 ||
+      generatedExactCombat.populationHints.miningRocks[0].nameID !== 900003 ||
+      generatedExactCombat.resourceComposition.oreTypeIDs[0] !== 1230
+    ) {
+      throw new Error(`Exact combat draft lost golden fields: ${exactCombatPack.body}`);
+    }
+    const exactCombatOverlayDelete = await request(server, `/api/overlays/${encodeURIComponent(exactCombatOverlay.id)}`, { method: "DELETE" });
+    if (exactCombatOverlayDelete.statusCode !== 200) throw new Error(`/api/overlays delete exact combat failed: ${exactCombatOverlayDelete.body}`);
     const validation = await request(server, "/api/validate", {
       method: "POST",
       body: {

@@ -24,6 +24,10 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function cloneObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? clone(value) : {};
+}
+
 function getSystemName(catalog, systemID) {
   const system = catalog.systemsByID.get(toInt(systemID, 0));
   return text(system && system.name);
@@ -204,8 +208,12 @@ function normalizeEncounter(catalog, encounter, index) {
   const profile = profileID ? catalog.npcProfilesByID.get(profileID) : null;
   const spawnGroup = spawnGroupID ? catalog.npcSpawnGroupsByID.get(spawnGroupID) : null;
   const spawnPool = spawnPoolID ? catalog.npcSpawnPoolsByID.get(spawnPoolID) : null;
-  const amount = Math.max(1, toInt(encounter && (encounter.amount || encounter.count), 1));
+  const explicitSpawnEntries = Array.isArray(encounter && encounter.spawnEntries)
+    ? encounter.spawnEntries.length
+    : 0;
+  const amount = Math.max(1, toInt(encounter && (encounter.amount || encounter.count), explicitSpawnEntries || 1));
   return {
+    ...cloneObject(encounter),
     key: text(encounter && encounter.key) || `wave_${index + 1}`,
     label: text(encounter && encounter.label) || `Wave ${index + 1}`,
     trigger: text(encounter && encounter.trigger) || (index === 0 ? "on_load" : "wave_cleared"),
@@ -237,6 +245,7 @@ function normalizeEncounter(catalog, encounter, index) {
 
 function normalizeRoom(room, index) {
   return {
+    ...cloneObject(room),
     roomKey: text(room && room.roomKey) || (index === 0 ? "room:entry" : `room:mission_${index + 1}`),
     label: text(room && room.label) || (index === 0 ? "Entry Pocket" : `Mission Room ${index + 1}`),
     source: text(room && room.source) || "eve_anom_utility",
@@ -250,6 +259,7 @@ function normalizeRoom(room, index) {
 
 function normalizeGate(gate, index) {
   return {
+    ...cloneObject(gate),
     gateKey: text(gate && gate.gateKey) || `gate:${index + 1}`,
     label: text(gate && gate.label) || "Acceleration Gate",
     typeID: toInt(gate && gate.typeID, 17831) || 17831,
@@ -304,10 +314,13 @@ function normalizeMiningRock(rock) {
   const quantity = toInt(rock.quantity || rock.remainingQuantity || rock.quantityPerRock, 0);
   if (!oreTypeID || quantity <= 0) return null;
   const normalized = {
+    ...cloneObject(rock),
     oreTypeID,
     count: Math.max(1, toInt(rock.count, 1)),
     quantity,
   };
+  const typeID = toInt(rock.typeID, 0);
+  if (typeID > 0) normalized.typeID = typeID;
   if (text(rock.label)) normalized.label = text(rock.label);
   const positionOffset = normalizePosition(rock.positionOffset);
   if (positionOffset) normalized.positionOffset = positionOffset;
@@ -323,6 +336,7 @@ function normalizeEnvironmentProp(prop, index) {
   const typeID = toInt(prop.typeID, 0);
   if (!typeID) return null;
   const normalized = {
+    ...cloneObject(prop),
     key: text(prop.key) || `authored:${typeID}:${index + 1}`,
     exact: prop.exact === true,
     typeID,
@@ -531,6 +545,11 @@ function buildGeneratedTemplate(catalog, overlay) {
   const siteKind = resolveSiteKind(catalog, overlay);
   const baseTemplate = getTemplateBase(catalog, overlay.baseTemplateID);
   const baseRaw = catalog.templatesByID.get(text(overlay.baseTemplateID));
+  const seededRaw = overlay.templateSeed && typeof overlay.templateSeed === "object" && !Array.isArray(overlay.templateSeed)
+    ? cloneObject(overlay.templateSeed)
+    : cloneObject(baseRaw && baseRaw.raw);
+  const seededPopulationHints = cloneObject(seededRaw.populationHints);
+  const seededSiteSceneProfile = cloneObject(seededRaw.siteSceneProfile);
   const encounters = (Array.isArray(overlay.encounters) ? overlay.encounters : [])
     .map((encounter, index) => normalizeEncounter(catalog, encounter, index));
   const authoredRooms = (Array.isArray(overlay.rooms) ? overlay.rooms : [])
@@ -552,31 +571,60 @@ function buildGeneratedTemplate(catalog, overlay) {
     .map((prop, index) => normalizeEnvironmentProp(prop, index))
     .filter(Boolean);
   const authoredLootTables = authoredLootTablesForOverlay(catalog, overlay);
-  const resourceComposition = buildResourceComposition(authoredResources, siteFamily);
-  const objectiveMarkers = buildObjectiveMarkers(siteFamily, encounters, resourceComposition);
+  const authoredResourceComposition = buildResourceComposition(authoredResources, siteFamily);
+  const seededResourceComposition = cloneObject(seededRaw.resourceComposition);
+  const resourceComposition = authoredResources.length > 0
+    ? authoredResourceComposition
+    : {
+      oreTypeIDs: Array.isArray(seededResourceComposition.oreTypeIDs) ? clone(seededResourceComposition.oreTypeIDs) : [],
+      gasTypeIDs: Array.isArray(seededResourceComposition.gasTypeIDs) ? clone(seededResourceComposition.gasTypeIDs) : [],
+      iceTypeIDs: Array.isArray(seededResourceComposition.iceTypeIDs) ? clone(seededResourceComposition.iceTypeIDs) : [],
+      hasAnyResources: seededResourceComposition.hasAnyResources === true ||
+        ["oreTypeIDs", "gasTypeIDs", "iceTypeIDs"].some((key) => Array.isArray(seededResourceComposition[key]) && seededResourceComposition[key].length > 0),
+    };
+  const objectiveMarkers = Array.isArray(seededPopulationHints.objectiveMarkers) && seededPopulationHints.objectiveMarkers.length > 0
+    ? clone(seededPopulationHints.objectiveMarkers)
+    : buildObjectiveMarkers(siteFamily, encounters, resourceComposition);
   const isMiningMission = contentFamily === "mission" && missionType === "mining";
   const objectiveTypeID = toInt(overlay.objectiveTypeID, 0) ||
     toInt(overlay.completion && overlay.completion.objectiveTypeID, 0);
   const objectiveQuantity = toInt(overlay.objectiveQuantity, 0) ||
     toInt(overlay.completion && overlay.completion.objectiveQuantity, 0);
+  const completion = overlay.completion && typeof overlay.completion === "object"
+    ? clone(overlay.completion)
+    : cloneObject(seededPopulationHints.completion);
+  const seededSourceConfidence = seededRaw.sourceConfidence && typeof seededRaw.sourceConfidence === "object"
+    ? clone(seededRaw.sourceConfidence)
+    : { label: "Admin Authored Override", score: 95 };
+  const seededSceneConfidence = seededSiteSceneProfile.confidence && typeof seededSiteSceneProfile.confidence === "object"
+    ? clone(seededSiteSceneProfile.confidence)
+    : { label: "Admin Authored Override", score: 95 };
+  const sceneEvidence = Array.isArray(seededSiteSceneProfile.evidence) && seededSiteSceneProfile.evidence.length > 0
+    ? clone(seededSiteSceneProfile.evidence)
+    : ["eve_anom_utility_template_pack"];
+  const populationResources = authoredResources.length > 0
+    ? {
+      oreTypeIDs: resourceComposition.oreTypeIDs,
+      gasTypeIDs: resourceComposition.gasTypeIDs,
+      iceTypeIDs: resourceComposition.iceTypeIDs,
+    }
+    : cloneObject(seededPopulationHints.resources);
   return {
+    ...seededRaw,
     templateID: generatedTemplateID(overlay),
-    source: "eve_anom_utility",
-    sourcePriority: 120,
-    sourceConfidence: {
-      label: "Admin Authored Override",
-      score: 95,
-    },
+    source: text(seededRaw.source) || "eve_anom_utility",
+    sourcePriority: toInt(seededRaw.sourcePriority, 0) || 120,
+    sourceConfidence: seededSourceConfidence,
     siteFamily,
     siteKind,
     siteOrigin: delivery === "mission_private" ? "admin_mission" : "admin_dungeon",
     resolvedName: text(overlay.title) || generatedTemplateID(overlay),
-    sourceDungeonID: toInt(baseTemplate && baseTemplate.sourceDungeonID, 0) || null,
-    archetypeID: toInt(baseTemplate && baseTemplate.archetypeID, 0) || null,
-    dungeonNameID: toInt(baseTemplate && baseTemplate.dungeonNameID, 0) || null,
-    factionID: toInt(baseTemplate && baseTemplate.factionID, 0) || null,
-    difficulty: toInt(baseTemplate && baseTemplate.difficulty, 0) || null,
-    entryObjectTypeID: toInt(baseRaw && baseRaw.raw && baseRaw.raw.entryObjectTypeID, 0) || null,
+    sourceDungeonID: toInt(seededRaw.sourceDungeonID || baseTemplate && baseTemplate.sourceDungeonID, 0) || null,
+    archetypeID: toInt(seededRaw.archetypeID || baseTemplate && baseTemplate.archetypeID, 0) || null,
+    dungeonNameID: toInt(seededRaw.dungeonNameID || baseTemplate && baseTemplate.dungeonNameID, 0) || null,
+    factionID: toInt(seededRaw.factionID || baseTemplate && baseTemplate.factionID, 0) || null,
+    difficulty: toInt(seededRaw.difficulty || baseTemplate && baseTemplate.difficulty, 0) || null,
+    entryObjectTypeID: toInt(seededRaw.entryObjectTypeID || baseRaw && baseRaw.raw && baseRaw.raw.entryObjectTypeID, 0) || null,
     rooms: roomProfiles,
     gates: authoredGates,
     connections: authoredGates.map((gate, index) => ({
@@ -594,20 +642,21 @@ function buildGeneratedTemplate(catalog, overlay) {
     })),
     resourceComposition,
     populationHints: {
-      source: "eve_anom_utility",
+      ...seededPopulationHints,
+      source: text(seededPopulationHints.source) || "eve_anom_utility",
       siteFamily,
       siteKind,
       encounter: encounters[0] || null,
       encounters,
-      completion: overlay.completion || {},
-      containers: [],
-      hazards: [],
+      completion,
+      containers: Array.isArray(seededPopulationHints.containers) ? clone(seededPopulationHints.containers) : [],
+      hazards: Array.isArray(seededPopulationHints.hazards) ? clone(seededPopulationHints.hazards) : [],
       environmentProps: authoredEnvironmentProps,
-      ...(isMiningMission ? {
+      ...(isMiningMission || authoredMiningRocks.length > 0 || Array.isArray(seededPopulationHints.miningRocks) ? {
         miningRocks: authoredMiningRocks,
-        objectiveTypeID: objectiveTypeID || null,
-        objectiveQuantity: objectiveQuantity || 0,
-        completeObjectiveOnEncounterClear: false,
+        objectiveTypeID: objectiveTypeID || toInt(seededPopulationHints.objectiveTypeID, 0) || null,
+        objectiveQuantity: objectiveQuantity || toInt(seededPopulationHints.objectiveQuantity, 0) || 0,
+        completeObjectiveOnEncounterClear: isMiningMission ? false : seededPopulationHints.completeObjectiveOnEncounterClear,
       } : {}),
       lootProfiles: authoredLootTables.map((lootTable) => ({
         lootTableID: lootTable.lootTableID,
@@ -615,34 +664,39 @@ function buildGeneratedTemplate(catalog, overlay) {
         entries: lootTable.entries.length,
         guaranteedEntries: lootTable.guaranteedEntries.length,
       })),
-      resources: {
+      resources: Object.keys(populationResources).length > 0 ? populationResources : {
         oreTypeIDs: resourceComposition.oreTypeIDs,
         gasTypeIDs: resourceComposition.gasTypeIDs,
         iceTypeIDs: resourceComposition.iceTypeIDs,
       },
-      dangerousWarpIn: false,
-      safeFromNpc: siteFamily === "ore" || siteFamily === "gas" || siteFamily === "ice",
+      dangerousWarpIn: typeof seededPopulationHints.dangerousWarpIn === "boolean" ? seededPopulationHints.dangerousWarpIn : false,
+      safeFromNpc: typeof seededPopulationHints.safeFromNpc === "boolean"
+        ? seededPopulationHints.safeFromNpc
+        : siteFamily === "ore" || siteFamily === "gas" || siteFamily === "ice",
       objectiveMarkers,
       npcOverrides: (Array.isArray(overlay.npcOverrides) ? overlay.npcOverrides : [])
         .map((override) => normalizeNpcOverride(catalog, override)),
     },
     siteSceneProfile: {
-      source: "eve_anom_utility",
-      confidence: {
-        label: "Admin Authored Override",
-        score: 95,
-      },
-      evidence: ["eve_anom_utility_template_pack"],
+      ...seededSiteSceneProfile,
+      source: text(seededSiteSceneProfile.source) || "eve_anom_utility",
+      confidence: seededSceneConfidence,
+      evidence: sceneEvidence,
       roomProfiles,
       gateProfiles: authoredGates,
-      structureProfiles: [],
-      objectiveVisualProfiles: objectiveMarkers.map((marker) => ({
-        role: marker.role,
-        label: marker.label,
-        key: marker.key,
-        icon: marker.icon || null,
-        analyzer: marker.analyzer || null,
-      })),
+      structureProfiles: Array.isArray(seededSiteSceneProfile.structureProfiles)
+        ? clone(seededSiteSceneProfile.structureProfiles)
+        : [],
+      objectiveVisualProfiles: Array.isArray(seededSiteSceneProfile.objectiveVisualProfiles) &&
+        seededSiteSceneProfile.objectiveVisualProfiles.length > 0
+        ? clone(seededSiteSceneProfile.objectiveVisualProfiles)
+        : objectiveMarkers.map((marker) => ({
+          role: marker.role,
+          label: marker.label,
+          key: marker.key,
+          icon: marker.icon || null,
+          analyzer: marker.analyzer || null,
+        })),
     },
     resourceHints: {
       oreTypesByDungeonIDAvailable: resourceComposition.oreTypeIDs.length > 0,
@@ -667,7 +721,7 @@ function buildGeneratedTemplate(catalog, overlay) {
       missionRecord: normalizeMissionAuthorityRecord(overlay.missionRecord),
       missionSecurity: overlay.missionSecurity || null,
       sourceLinks: Array.isArray(overlay.sourceLinks) ? clone(overlay.sourceLinks) : [],
-      completion: overlay.completion || {},
+      completion,
       notes: overlay.notes || "",
       authoredBy: "EveAnomUtility",
       authoredAt: overlay.updatedAt,
@@ -688,7 +742,7 @@ function buildGeneratedTemplate(catalog, overlay) {
     missionSecurity: overlay.missionSecurity || null,
     missionRecord: normalizeMissionAuthorityRecord(overlay.missionRecord),
     sourceLinks: Array.isArray(overlay.sourceLinks) ? clone(overlay.sourceLinks) : [],
-    completion: overlay.completion || {},
+    completion,
     npcAuthoring: {
       lootTables: authoredLootTables,
     },

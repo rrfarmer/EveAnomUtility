@@ -208,14 +208,27 @@ function buildGenericSecurityDraft(mission, baseTemplate) {
   const raw = baseTemplate && baseTemplate.raw && typeof baseTemplate.raw === "object"
     ? baseTemplate.raw
     : {};
-  const existingEncounters = Array.isArray(raw.populationHints && raw.populationHints.encounters)
-    ? raw.populationHints.encounters
-    : raw.populationHints && raw.populationHints.encounter
-      ? [raw.populationHints.encounter]
+  const populationHints = raw.populationHints && typeof raw.populationHints === "object"
+    ? raw.populationHints
+    : {};
+  const siteSceneProfile = raw.siteSceneProfile && typeof raw.siteSceneProfile === "object"
+    ? raw.siteSceneProfile
+    : {};
+  const existingEncounters = Array.isArray(populationHints.encounters)
+    ? populationHints.encounters
+    : populationHints.encounter
+      ? [populationHints.encounter]
       : [];
-  const hasGate = Array.isArray(raw.siteSceneProfile && raw.siteSceneProfile.gateProfiles) &&
-    raw.siteSceneProfile.gateProfiles.length > 0;
-  const rooms = hasGate
+  const exactRooms = Array.isArray(siteSceneProfile.roomProfiles)
+    ? clone(siteSceneProfile.roomProfiles)
+    : [];
+  const exactGates = Array.isArray(siteSceneProfile.gateProfiles)
+    ? clone(siteSceneProfile.gateProfiles)
+    : [];
+  const hasGate = exactGates.length > 0;
+  const rooms = exactRooms.length > 0
+    ? exactRooms
+    : hasGate
     ? [
       { roomKey: "room:entry", label: "Entry Gate", role: "gate_only", initialState: "active" },
       { roomKey: "room:combat", label: "Combat Pocket", role: "combat", initialState: "pending" },
@@ -224,13 +237,14 @@ function buildGenericSecurityDraft(mission, baseTemplate) {
       { roomKey: "room:entry", label: "Combat Pocket", role: "combat", initialState: "active" },
     ];
   const encounters = existingEncounters.map((encounter, index) => ({
+    ...clone(encounter),
     key: text(encounter.key) || `encounter_${index + 1}`,
     label: text(encounter.label) || `Encounter ${index + 1}`,
-    spawnQuery: text(encounter.spawnQuery) || "npc_hostiles",
-    count: Math.max(1, toInt(encounter.amount || encounter.count, 3)),
-    amount: Math.max(1, toInt(encounter.amount || encounter.count, 3)),
-    trigger: hasGate ? "on_room_active" : text(encounter.trigger) || "on_load",
-    roomKey: hasGate ? "room:combat" : text(encounter.roomKey) || "room:entry",
+    spawnQuery: text(encounter.spawnQuery),
+    count: Math.max(1, toInt(encounter.amount || encounter.count, Array.isArray(encounter.spawnEntries) ? encounter.spawnEntries.length : 3)),
+    amount: Math.max(1, toInt(encounter.amount || encounter.count, Array.isArray(encounter.spawnEntries) ? encounter.spawnEntries.length : 3)),
+    trigger: text(encounter.trigger) || (hasGate ? "on_room_active" : "on_load"),
+    roomKey: text(encounter.roomKey) || (hasGate ? "room:combat" : "room:entry"),
     waveIndex: Math.max(1, toInt(encounter.waveIndex, index + 1)),
     notes: text(encounter.notes),
   }));
@@ -245,16 +259,19 @@ function buildGenericSecurityDraft(mission, baseTemplate) {
     kind: "mission_combat",
     missionType: "combat",
     missionRecord: clone(mission.raw || null),
+    templateSeed: clone(raw),
     status: "draft",
     rooms,
-    gates: gate ? [{
+    gates: exactGates.length > 0 ? exactGates : gate ? [{
       ...gate,
       destinationRoomKey: "room:combat",
       initialState: "unlocked",
       source: "linked_client_dungeon",
     }] : [],
     encounters,
-    completion: {
+    miningRocks: clone(populationHints.miningRocks || []),
+    environmentProps: clone(populationHints.environmentProps || []),
+    completion: populationHints.completion && typeof populationHints.completion === "object" ? clone(populationHints.completion) : {
       mode: encounters.length > 0 ? "encounters_cleared" : "mission_objective_complete",
       despawnDelaySeconds: 0,
     },
@@ -263,11 +280,19 @@ function buildGenericSecurityDraft(mission, baseTemplate) {
       dungeonID: mission.dungeonID,
       sourceName: "Linked EveJS mission dungeon",
       sourceUrl: "",
-      sourceConfidence: 40,
+      sourceConfidence: text(populationHints.source).includes("golden_log") ? 100 : 40,
       baseTemplateID: text(mission.linkedTemplateID),
+      encounterCount: encounters.length,
+      gateCount: exactGates.length,
+      environmentPropCount: Array.isArray(populationHints.environmentProps) ? populationHints.environmentProps.length : 0,
+      miningRockCount: Array.isArray(populationHints.miningRocks)
+        ? populationHints.miningRocks.reduce((total, rock) => total + Math.max(1, toInt(rock && rock.count, 1)), 0)
+        : 0,
     },
     sourceLinks: [],
-    notes: "Generic Security mission draft from linked EveJS dungeon hints. Verify rooms, triggers, and NPC mix before marking ready.",
+    notes: text(populationHints.source).includes("golden_log")
+      ? "Security mission draft from the linked golden-log EveJS dungeon. Preserve exact spawnEntries, gates, props, trigger messages, and completion metadata when editing."
+      : "Generic Security mission draft from linked EveJS dungeon hints. Verify rooms, triggers, and NPC mix before marking ready.",
   };
 }
 
@@ -298,6 +323,7 @@ function buildMiningMissionDraft(mission, baseTemplate) {
     kind: "mission_combat",
     missionType: "mining",
     missionRecord: clone(mission.raw || null),
+    templateSeed: clone(raw),
     status: "draft",
     rooms: [
       {

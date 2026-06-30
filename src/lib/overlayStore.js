@@ -86,6 +86,9 @@ function sanitizeOverlay(input = {}) {
     missionType: String(input.missionType || input.mission && input.mission.type || "").trim(),
     status: String(input.status || "draft").trim() || "draft",
     baseTemplateID: String(input.baseTemplateID || "").trim(),
+    templateSeed: input.templateSeed && typeof input.templateSeed === "object" && !Array.isArray(input.templateSeed)
+      ? input.templateSeed
+      : null,
     spawnScope,
     solarSystemID: Number(spawnScope.solarSystemID) || Number(input.solarSystemID) || 0,
     placement: input.placement && typeof input.placement === "object"

@@ -419,9 +419,9 @@
 
                 <div id="missionMiningPanel" hidden>
                   <div class="section-heading">
-                    <h3><i data-lucide="pickaxe" class="icon"></i><span>Mining Objective</span></h3>
+                    <h3><i data-lucide="boxes" class="icon"></i><span>Exact Mission Data</span></h3>
                   </div>
-                  <p class="section-hint">Exact mission data from EveJS. Keep TQ-only fields such as dunObjectID, dunRotation, exact, ownerID, and positionOffset intact.</p>
+                  <p class="section-hint">Exact EveJS mission arrays. Keep TQ-only fields such as dunObjectID, dunRotation, exact, ownerID, nameID, trigger metadata, and positionOffset intact.</p>
                   <div class="form-grid">
                     <label>
                       <span>Objective TypeID</span>
@@ -430,6 +430,14 @@
                     <label>
                       <span>Objective Quantity</span>
                       <input id="missionObjectiveQuantityInput" inputmode="numeric" placeholder="20000">
+                    </label>
+                    <label class="span-2">
+                      <span>Encounters JSON</span>
+                      <textarea id="missionEncountersJson" rows="10" spellcheck="false"></textarea>
+                    </label>
+                    <label class="span-2">
+                      <span>Gates JSON</span>
+                      <textarea id="missionGatesJson" rows="8" spellcheck="false"></textarea>
                     </label>
                     <label class="span-2">
                       <span>Mining Rocks JSON</span>

@@ -330,7 +330,10 @@ function validateOverlay(input = {}) {
     }
   }
   encounters.forEach((encounter, index) => {
-    const count = toInt(encounter && encounter.count, 0);
+    const explicitSpawnEntries = Array.isArray(encounter && encounter.spawnEntries)
+      ? encounter.spawnEntries.length
+      : 0;
+    const count = toInt(encounter && (encounter.count || encounter.amount), explicitSpawnEntries);
     if (count < 1 || count > 250) {
       findings.push({
         level: "error",
@@ -363,7 +366,7 @@ function validateOverlay(input = {}) {
         message: `NPC spawn pool not found: ${spawnPoolID}`,
       });
     }
-    if (!profileID && !spawnGroupID && !spawnPoolID && !spawnQuery) {
+    if (!profileID && !spawnGroupID && !spawnPoolID && !spawnQuery && explicitSpawnEntries === 0) {
       findings.push({
         level: "error",
         path: `$.encounters[${index}]`,

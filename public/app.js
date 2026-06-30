@@ -1829,6 +1829,7 @@ const missionState = {
   missionName: "",
   missionType: "combat",
   baseTemplate: null,
+  templateSeed: null,
   selectedTemplateRaw: null,
   rooms: [],
   gates: [],
@@ -1851,6 +1852,7 @@ function blankMissionState() {
   missionState.missionName = "";
   missionState.missionType = "combat";
   missionState.baseTemplate = null;
+  missionState.templateSeed = null;
   missionState.selectedTemplateRaw = null;
   missionState.rooms = [];
   missionState.gates = [];
@@ -1877,6 +1879,7 @@ function missionOverlayFromForm() {
     missionType: $("#missionCategorySelect").value || "combat",
     status: $("#missionStatusInput").value,
     baseTemplateID: missionState.baseTemplate ? missionState.baseTemplate.templateID : "",
+    templateSeed: missionState.templateSeed,
     spawnScope: {
       mode: "any_eligible",
       securityBands: ["highsec", "lowsec", "nullsec", "wormhole"],
@@ -2008,6 +2011,9 @@ function deriveMissionCompletion() {
   if (objectiveKeys.length) {
     return { mode: "encounter_group_cleared", encounterKeys: objectiveKeys, despawnDelaySeconds: 0 };
   }
+  if (missionState.completion && typeof missionState.completion === "object") {
+    return structuredClone(missionState.completion);
+  }
   return { mode: "encounters_cleared", despawnDelaySeconds: 0 };
 }
 
@@ -2138,7 +2144,8 @@ async function runNpcPickerSearch(encounter, row) {
 function renderNpcLine(encounter, group) {
   const row = document.createElement("div");
   const sourceId = npcSourceId(encounter);
-  const picking = missionState.pickerKey === encounter.key || !sourceId;
+  const exactEntries = Array.isArray(encounter.spawnEntries) ? encounter.spawnEntries : [];
+  const picking = exactEntries.length === 0 && (missionState.pickerKey === encounter.key || !sourceId);
   if (picking) {
     row.className = "npc-line is-picking";
     row.innerHTML = `
@@ -2163,6 +2170,30 @@ function renderNpcLine(encounter, group) {
       renderMission();
     });
     runNpcPickerSearch(encounter, row);
+    return row;
+  }
+  if (exactEntries.length > 0) {
+    row.className = "npc-line";
+    const killableCount = exactEntries.filter((entry) => entry && entry.entityKind === "killableStructure").length;
+    const npcCount = exactEntries.length - killableCount;
+    const displayName = encounter.label || encounter.key || "Exact spawn entries";
+    const meta = smallMeta([
+      `${npcCount} NPC${npcCount === 1 ? "" : "s"}`,
+      killableCount ? `${killableCount} killable structure${killableCount === 1 ? "" : "s"}` : "",
+      encounter.trigger || "on_load",
+    ]);
+    row.innerHTML = `
+      <input type="number" class="npc-count" min="1" value="${exactEntries.length}" title="Exact entry count" disabled>
+      <span class="npc-times">${icon("x")}</span>
+      <div class="npc-chip">${icon("boxes")}<div><strong>${escapeHTML(displayName)}</strong><span>${escapeHTML(meta)}</span></div></div>
+      <button class="remove-row npc-remove" title="Remove">${iconText("trash-2", "")}</button>
+    `;
+    row.querySelector(".npc-remove").addEventListener("click", () => {
+      const idx = missionState.encounters.indexOf(encounter);
+      if (idx >= 0) missionState.encounters.splice(idx, 1);
+      renderMission();
+    });
+    hydrateIcons(row);
     return row;
   }
   row.className = "npc-line";
@@ -2386,14 +2417,19 @@ function renderMissionMining() {
   const panel = $("#missionMiningPanel");
   if (!panel) return;
   const isMining = missionState.missionType === "mining" || $("#missionCategorySelect").value === "mining";
-  panel.hidden = !isMining;
-  if (!isMining) return;
+  panel.hidden = false;
   const objectiveTypeInput = $("#missionObjectiveTypeInput");
   const objectiveQuantityInput = $("#missionObjectiveQuantityInput");
+  const encountersJson = $("#missionEncountersJson");
+  const gatesJson = $("#missionGatesJson");
   const rocksJson = $("#missionMiningRocksJson");
   const propsJson = $("#missionEnvironmentPropsJson");
+  objectiveTypeInput.closest("label").hidden = !isMining;
+  objectiveQuantityInput.closest("label").hidden = !isMining;
   objectiveTypeInput.value = missionState.objectiveTypeID || "";
   objectiveQuantityInput.value = missionState.objectiveQuantity || "";
+  encountersJson.value = formatJson(missionState.encounters);
+  gatesJson.value = formatJson(missionState.gates);
   rocksJson.value = formatJson(missionState.miningRocks);
   propsJson.value = formatJson(missionState.environmentProps);
   objectiveTypeInput.oninput = () => {
@@ -2405,6 +2441,30 @@ function renderMissionMining() {
     missionState.objectiveQuantity = Number(objectiveQuantityInput.value) || 0;
     renderMissionOverview();
     renderMissionCompletionSummary();
+  };
+  encountersJson.onchange = async () => {
+    try {
+      missionState.encounters = parseArrayJsonField(encountersJson, "Encounters");
+      encountersJson.value = formatJson(missionState.encounters);
+      ensureEncounterKeys();
+      await resolveNpcIds(missionState.encounters.map(npcSourceId));
+      renderMission();
+      showNotice("Encounters JSON accepted.");
+    } catch (error) {
+      showNotice(error.message);
+      encountersJson.value = formatJson(missionState.encounters);
+    }
+  };
+  gatesJson.onchange = () => {
+    try {
+      missionState.gates = parseArrayJsonField(gatesJson, "Gates");
+      gatesJson.value = formatJson(missionState.gates);
+      renderMission();
+      showNotice("Gates JSON accepted.");
+    } catch (error) {
+      showNotice(error.message);
+      gatesJson.value = formatJson(missionState.gates);
+    }
   };
   rocksJson.onchange = () => {
     try {
@@ -2536,6 +2596,7 @@ async function openMissionFromCatalog(mission) {
   missionState.missionSecurity = draft.missionSecurity && typeof draft.missionSecurity === "object" ? structuredClone(draft.missionSecurity) : null;
   missionState.sourceLinks = Array.isArray(draft.sourceLinks) ? structuredClone(draft.sourceLinks) : [];
   missionState.baseTemplate = baseTemplate;
+  missionState.templateSeed = draft.templateSeed && typeof draft.templateSeed === "object" ? structuredClone(draft.templateSeed) : null;
   missionState.selectedTemplateRaw = baseTemplate && baseTemplate.raw ? baseTemplate.raw : null;
   ensureEncounterKeys();
   await resolveNpcIds(missionState.encounters.map(npcSourceId));
@@ -2584,6 +2645,7 @@ async function loadMissionOverlay(overlay) {
   missionState.completion = overlay.completion && typeof overlay.completion === "object" ? structuredClone(overlay.completion) : null;
   missionState.missionSecurity = overlay.missionSecurity && typeof overlay.missionSecurity === "object" ? structuredClone(overlay.missionSecurity) : null;
   missionState.sourceLinks = Array.isArray(overlay.sourceLinks) ? structuredClone(overlay.sourceLinks) : [];
+  missionState.templateSeed = overlay.templateSeed && typeof overlay.templateSeed === "object" ? structuredClone(overlay.templateSeed) : null;
   if (overlay.baseTemplateID) {
     try {
       const data = await api(`/api/templates/${encodeURIComponent(overlay.baseTemplateID)}`);
@@ -2710,6 +2772,10 @@ function renderMissionPackSummary(summary, dir) {
     `Mission ${summary.missionID || "?"} · dungeon ${summary.dungeonID || "?"}`,
     `Objective: ${summary.objectiveMode || "kill"}`,
     `${summary.encounterCount} encounters (${triggers})`,
+    `${summary.killableStructureEntries || 0} killable structures`,
+    `${summary.miningRockCount || 0} rocks`,
+    `${summary.triggerMessages || 0} trigger messages / ${summary.triggerAudio || 0} trigger audio`,
+    `${summary.completionTriggerMessages || 0} completion messages / ${summary.completionTriggerAudio || 0} completion audio`,
     `${summary.explicitSpawnEntries} spawn entries · ${summary.gateCount} gate(s) · ${summary.environmentPropCount} props`,
   ];
   const wrap = document.createElement("div");

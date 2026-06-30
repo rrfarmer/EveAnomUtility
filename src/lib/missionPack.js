@@ -91,15 +91,23 @@ function summarizeMissionPack(pack) {
   const encounters = Array.isArray(populationHints.encounters) ? populationHints.encounters : [];
   const triggers = {};
   let explicitSpawnEntries = 0;
+  let killableStructureEntries = 0;
+  let triggerMessages = 0;
+  let triggerAudio = 0;
   for (const encounter of encounters) {
     const trigger = (encounter && encounter.trigger) || "on_load";
     triggers[trigger] = (triggers[trigger] || 0) + 1;
     if (Array.isArray(encounter && encounter.spawnEntries)) {
       explicitSpawnEntries += encounter.spawnEntries.length;
+      killableStructureEntries += encounter.spawnEntries
+        .filter((entry) => entry && entry.entityKind === "killableStructure").length;
     }
+    if (Array.isArray(encounter && encounter.triggerMessages)) triggerMessages += encounter.triggerMessages.length;
+    if (Array.isArray(encounter && encounter.triggerAudio)) triggerAudio += encounter.triggerAudio.length;
   }
   const gateProfiles =
     (pack.dungeon.siteSceneProfile && pack.dungeon.siteSceneProfile.gateProfiles) || [];
+  const miningRocks = Array.isArray(populationHints.miningRocks) ? populationHints.miningRocks : [];
   return {
     ...resolveForceFlags(pack),
     title: pack.dungeon.title || pack.dungeon.templateID,
@@ -108,11 +116,21 @@ function summarizeMissionPack(pack) {
     objectiveMode: populationHints.objectiveMode || null,
     encounterCount: encounters.length,
     explicitSpawnEntries,
+    killableStructureEntries,
+    triggerMessages,
+    triggerAudio,
+    completionTriggerMessages: Array.isArray(populationHints.completionTriggerMessages)
+      ? populationHints.completionTriggerMessages.length
+      : 0,
+    completionTriggerAudio: Array.isArray(populationHints.completionTriggerAudio)
+      ? populationHints.completionTriggerAudio.length
+      : 0,
     triggers,
     gateCount: Array.isArray(gateProfiles) ? gateProfiles.length : 0,
     environmentPropCount: Array.isArray(populationHints.environmentProps)
       ? populationHints.environmentProps.length
       : 0,
+    miningRockCount: miningRocks.reduce((total, rock) => total + Math.max(1, toInt(rock && rock.count, 1)), 0),
     nodeGraphNodes: pack.nodegraph && pack.nodegraph.nodesByID
       ? Object.keys(pack.nodegraph.nodesByID).length
       : 0,
