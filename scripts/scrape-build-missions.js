@@ -34,6 +34,8 @@ function parseArgs(argv) {
     reset: false,
     levels: new Set([1, 2, 3, 4, 5]),
     wakkas: new Set(),
+    excludedWakkas: new Set(),
+    excludedTemplateIDs: new Set(),
     manifestPath: DEFAULT_MANIFEST,
     rawDir: DEFAULT_RAW_DIR,
     limit: 0,
@@ -62,6 +64,14 @@ function parseArgs(argv) {
     else if (token === "--wakka") {
       for (const wakka of String(argv[++index] || "").split(",")) {
         if (wakka.trim()) args.wakkas.add(wakka.trim());
+      }
+    } else if (token === "--exclude-wakka") {
+      for (const wakka of String(argv[++index] || "").split(",")) {
+        if (wakka.trim()) args.excludedWakkas.add(wakka.trim());
+      }
+    } else if (token === "--exclude-template") {
+      for (const templateID of String(argv[++index] || "").split(",")) {
+        if (templateID.trim()) args.excludedTemplateIDs.add(templateID.trim());
       }
     } else if (token === "--help" || token === "-h") {
       args.help = true;
@@ -104,6 +114,8 @@ function usage() {
     "  --replace-existing      Replace existing templates with freshly built scrape templates.",
     "  --levels 1-5            Limit mission levels. Also accepts comma lists like 1,2.",
     "  --wakka A,B             Limit to one or more Eve-Survival wakka IDs.",
+    "  --exclude-wakka A,B     Skip one or more Eve-Survival wakka IDs.",
+    "  --exclude-template A,B  Skip one or more template IDs.",
     "  --limit N               Stop after N generated/updated templates.",
     "  --include-edit-links    Include bad source links whose wakka contains /edit.",
     "  --no-merge              Disable Eve University local-cache enrichment.",
@@ -137,6 +149,8 @@ function selectRecords(records, args) {
   return records
     .filter((record) => args.levels.has(Number(record.level)))
     .filter((record) => args.wakkas.size <= 0 || args.wakkas.has(record.wakka))
+    .filter((record) => !args.excludedWakkas.has(record.wakka))
+    .filter((record) => !args.excludedTemplateIDs.has(templateIDForRecord(record)))
     .filter((record) => !(args.skipEditLinks && /\/edit\b/i.test(String(record.wakka || ""))));
 }
 

@@ -412,6 +412,10 @@ function buildRoomProfiles(rooms, mission) {
 // Patch an EXISTING eve-survival template: replace spawn-bearing rooms + counts, preserve everything else.
 function patchExistingTemplate(target, mission) {
   const rooms = buildRooms(mission);
+  target.source = mission.source || target.source || "eve-survival";
+  target.sourceMissionID = mission.wakka ? `eve-survival:${mission.wakka}` : target.sourceMissionID;
+  target.title = mission.title || target.title;
+  target.missionLevel = mission.level || target.missionLevel || null;
   target.rooms = rooms;
   target.populationHints = buildPopulationHints(rooms, mission);
   target.objectiveHints = buildObjectiveHints(mission);
