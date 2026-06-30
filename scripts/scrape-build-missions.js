@@ -181,7 +181,13 @@ function addUnique(indexes, indexName, key, templateID) {
   indexes[indexName][key].sort();
 }
 
-function refreshAuthorityMetadata(dungeon, changedTemplateIDs) {
+function sourceIndexKeyForTemplate(templateID, template) {
+  if (templateID.startsWith("eve-survival:")) return "eve-survival";
+  if (templateID.startsWith("client-dungeon:")) return "client";
+  return String(template && template.source || "unknown");
+}
+
+function refreshAuthorityMetadata(dungeon) {
   dungeon.templatesByID = dungeon.templatesByID || {};
   dungeon.counts = dungeon.counts || {};
   dungeon.indexes = dungeon.indexes || {};
@@ -189,11 +195,11 @@ function refreshAuthorityMetadata(dungeon, changedTemplateIDs) {
   dungeon.counts.eveSurvivalMissionCount = Object.keys(dungeon.templatesByID)
     .filter((templateID) => templateID.startsWith("eve-survival:")).length;
 
-  for (const templateID of changedTemplateIDs) {
-    const template = dungeon.templatesByID[templateID];
-    if (!template) continue;
-    addUnique(dungeon.indexes, "templateIDsBySource", "eve-survival", templateID);
-    addUnique(dungeon.indexes, "templateIDsByFamily", template.siteFamily || "mission", templateID);
+  dungeon.indexes.templateIDsBySource = {};
+  dungeon.indexes.templateIDsByFamily = {};
+  for (const [templateID, template] of Object.entries(dungeon.templatesByID)) {
+    addUnique(dungeon.indexes, "templateIDsBySource", sourceIndexKeyForTemplate(templateID, template), templateID);
+    addUnique(dungeon.indexes, "templateIDsByFamily", template.siteFamily || "unknown", templateID);
   }
 }
 
@@ -241,6 +247,7 @@ async function main() {
     rawMissing: [],
     invalid: [],
     warnings: [],
+    unplayableRemoved: [],
     unplayableSkipped: [],
     inserted: [],
     patched: [],
@@ -249,6 +256,7 @@ async function main() {
     backups: [],
   };
   const changedTemplateIDs = [];
+  const removedTemplateIDs = [];
 
   for (const record of records) {
     const templateID = templateIDForRecord(record);
@@ -281,14 +289,25 @@ async function main() {
     }
     const playability = templatePlayability(nextTemplate);
     if (args.skipUnplayable && playability && playability.playable === false) {
-      summary.unplayableSkipped.push({
+      const row = {
         wakka: record.wakka,
         templateID,
         title: mission.title || record.title,
         level: mission.level || record.level,
         playability: playability.strategy || playability.grade || "",
         gaps: Array.isArray(playability.gaps) ? playability.gaps : [],
-      });
+      };
+      if (existing) {
+        if (args.apply) {
+          const backup = await maybeBackup(applyTarget, templateID, existing, args);
+          if (backup) summary.backups.push(backup);
+          delete dungeon.templatesByID[templateID];
+          removedTemplateIDs.push(templateID);
+        }
+        summary.unplayableRemoved.push(row);
+      } else {
+        summary.unplayableSkipped.push(row);
+      }
       continue;
     }
     if (args.strict && validation.warnings.length > 0) {
@@ -331,8 +350,8 @@ async function main() {
     if (args.limit > 0 && changedCount >= args.limit) break;
   }
 
-  if (args.apply && changedTemplateIDs.length > 0) {
-    refreshAuthorityMetadata(dungeon, changedTemplateIDs);
+  if (args.apply && (changedTemplateIDs.length > 0 || removedTemplateIDs.length > 0)) {
+    refreshAuthorityMetadata(dungeon);
     await writeDungeonAuthority(applyTarget.dataDir, dungeon);
   }
 
@@ -367,6 +386,7 @@ function printSummary(summary, args, applyTarget, selectedCount) {
       `  generated/updated: ${changed} (${summary.inserted.length} inserted, ${summary.patched.length} patched, ${summary.replaced.length} replaced)`,
       `  source-merged with Eve University: ${summary.merged}`,
       `  raw cache missing: ${summary.rawMissing.length}`,
+      `  ${args.apply ? "unplayable removed" : "unplayable would remove"}: ${summary.unplayableRemoved.length}`,
       `  unplayable skipped: ${summary.unplayableSkipped.length}`,
       `  invalid/skipped: ${summary.invalid.length}`,
       `  warnings: ${summary.warnings.length}`,
@@ -375,6 +395,7 @@ function printSummary(summary, args, applyTarget, selectedCount) {
   printRows("Inserted", summary.inserted);
   printRows("Patched", summary.patched);
   printRows("Replaced", summary.replaced);
+  printRows(args.apply ? "Unplayable removed" : "Unplayable would remove", summary.unplayableRemoved);
   printRows("Unplayable skipped", summary.unplayableSkipped);
   if (summary.rawMissing.length) {
     process.stdout.write(`\nRaw cache missing (${summary.rawMissing.length}):\n`);
